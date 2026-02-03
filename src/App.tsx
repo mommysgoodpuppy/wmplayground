@@ -628,6 +628,16 @@ function App() {
           )}
         </div>
         <div className="header-right">
+          <a
+            className="github-link"
+            href="https://github.com/mommysgoodpuppy/workmangr"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Workmangr on GitHub"
+            title="Workmangr on GitHub"
+          >
+            GitHub
+          </a>
           <div className={`status ${loading ? "loading" : "ready"}`}>
             {loading
               ? "Compiling..."

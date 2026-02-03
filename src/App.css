@@ -71,6 +71,28 @@
   gap: 1rem;
 }
 
+.github-link {
+  position: relative;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: white;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background-color: rgba(255, 255, 255, 0.08);
+  transition: background-color 150ms ease-in-out, border-color 150ms ease-in-out;
+}
+
+.github-link:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
 /* Theme Toggle - Tangled btn style */
 .theme-toggle {
   position: relative;

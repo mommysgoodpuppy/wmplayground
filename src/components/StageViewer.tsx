@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 interface CompilationResult {
   success: boolean;
   data?: {
@@ -14,10 +12,9 @@ interface CompilationResult {
 
 interface StageViewerProps {
   result: CompilationResult | null;
-  stage: string;
 }
 
-export function StageViewer({ result, stage }: StageViewerProps) {
+export function StageViewer({ result }: StageViewerProps) {
   if (!result) {
     return (
       <div className="stage-viewer empty">
@@ -97,7 +94,7 @@ export function StageViewer({ result, stage }: StageViewerProps) {
           : <div className="no-data">No AST data</div>}
       </div>
 
-      {result.data?.lowered && (
+      {result.data?.lowered != null && (
         <div className="stage-section">
           <h4>Lowered AST</h4>
           {(result.data as any)?.loweringError
@@ -121,7 +118,7 @@ export function StageViewer({ result, stage }: StageViewerProps) {
         </div>
       )}
 
-      {result.data?.types && (
+      {result.data?.types != null && (
         <div className="stage-section">
           <h3>🏷️ Type Information</h3>
           <pre className="json-output">

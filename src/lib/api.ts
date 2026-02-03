@@ -34,16 +34,10 @@ export interface CompilationResult {
   error?: string;
 }
 
-export interface CompileResponse {
-  success: boolean;
-  data?: CompilationResult;
-  error?: string;
-}
-
 export async function compileWorkman(
   source: string,
   stage: string = 'all'
-): Promise<CompileResponse> {
+): Promise<CompilationResult> {
   const response = await fetch(`${API_BASE}/compile`, {
     method: 'POST',
     headers: {
@@ -58,7 +52,13 @@ export async function compileWorkman(
 
   try {
     const data = await response.json();
-    return data;
+    if (data && typeof data === "object" && "success" in data) {
+      if (data.success) {
+        return { success: true, ...(data.data ?? {}) } as CompilationResult;
+      }
+      return { success: false, error: data.error ?? "Compilation failed" };
+    }
+    return { success: false, error: "Invalid response from compiler" };
   } catch (e) {
     const stdout = await response.text();
     console.error("[API] Failed to parse JSON:", e);

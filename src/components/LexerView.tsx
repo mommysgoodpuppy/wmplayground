@@ -25,7 +25,7 @@ export function LexerView({ tokens, sourceCode }: LexerViewProps) {
 
   // For each right bracket with mate (source position of left bracket),
   // find the left bracket's token index and add reverse mate
-  processedTokens.forEach((token, index) => {
+  processedTokens.forEach((token) => {
     if (typeof token.mate === "number") {
       const leftPosition = token.mate;
       const leftIndex = positionToIndex.get(leftPosition);
@@ -59,7 +59,7 @@ export function LexerView({ tokens, sourceCode }: LexerViewProps) {
     "RBracket",
   ]);
 
-  const getColorForToken = (token: Token, index: number): string => {
+  const getColorForToken = (token: Token): string => {
     // Make "Other" tokens bright red to highlight lexer bugs
     if (token.kind === "Other") {
       return "#ff0000";
@@ -97,14 +97,14 @@ export function LexerView({ tokens, sourceCode }: LexerViewProps) {
     let result = "";
     let lastEnd = 0;
 
-    processedTokens.forEach((token, index) => {
+    processedTokens.forEach((token) => {
       // Add any text between tokens (whitespace, etc.)
       if (token.span.start > lastEnd) {
         result += escapeHtml(sourceCode.substring(lastEnd, token.span.start));
       }
 
       // Add the token with color
-      const color = getColorForToken(token, index);
+      const color = getColorForToken(token);
       const tokenText = sourceCode.substring(token.span.start, token.span.end);
 
       // Build tooltip with token info

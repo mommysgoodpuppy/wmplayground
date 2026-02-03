@@ -5,7 +5,7 @@ import { CodeEditor } from "./components/CodeEditor";
 import { ASTTreeView } from "./components/ASTTreeView";
 import { NodeInspector } from "./components/NodeInspector";
 import { LexerView } from "./components/LexerView";
-import { compileWorkman, type Stage } from "./lib/api";
+import { compileWorkman } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
 
 const SunIcon = () => (

@@ -53,6 +53,14 @@
   color: white;
 }
 
+.header-badge.cli-status.ok {
+  background-color: rgba(16, 185, 129, 0.9);
+}
+
+.header-badge.cli-status.bad {
+  background-color: rgba(239, 68, 68, 0.9);
+}
+
 .header p {
   display: none;
 }

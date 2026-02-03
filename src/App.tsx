@@ -5,7 +5,7 @@ import { CodeEditor } from "./components/CodeEditor";
 import { ASTTreeView } from "./components/ASTTreeView";
 import { NodeInspector } from "./components/NodeInspector";
 import { LexerView } from "./components/LexerView";
-import { compileWorkman } from "./lib/api";
+import { checkCliHealth, compileWorkman } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
 
 const SunIcon = () => (
@@ -165,6 +165,8 @@ let main = => {
 `.trim();
 
 function App() {
+  const isCliMode = import.meta.env.MODE === "development" &&
+    import.meta.env.VITE_USE_CLI_SERVER === "1";
   const [code, setCode] = useState(defaultCode);
   const [result, setResult] = useState<CompilationResult | null>(null);
   const [activeTab, setActiveTab] = useState<"lexer" | "parser">(() => {
@@ -172,6 +174,7 @@ function App() {
     return (saved === "lexer" || saved === "parser") ? saved : "parser";
   });
   const [loading, setLoading] = useState(false);
+  const [compileMs, setCompileMs] = useState<number | null>(null);
   const [errorLocation, setErrorLocation] = useState<ErrorLocation | null>(
     null,
   );
@@ -187,11 +190,37 @@ function App() {
   const debounceTimer = useRef<number | null>(null);
   const editorRef = useRef<any>(null);
   const isTreeClickRef = useRef(false);
+  const [cliStatus, setCliStatus] = useState<
+    { ok: boolean; latencyMs: number; error?: string } | null
+  >(null);
 
   // Persist active tab to localStorage
   useEffect(() => {
     localStorage.setItem("activeTab", activeTab);
   }, [activeTab]);
+
+  // Poll CLI server health in dev mode
+  useEffect(() => {
+    if (!isCliMode) {
+      setCliStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    const tick = async () => {
+      const status = await checkCliHealth();
+      if (!cancelled) {
+        setCliStatus(status);
+      }
+    };
+
+    tick();
+    const id = window.setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [isCliMode]);
 
   // Helper to resolve child IDs to actual node objects recursively
   const resolveNode = (
@@ -210,9 +239,9 @@ function App() {
       .map((child: any) => {
         const resolvedChild = resolveNode(child.id, cache, visited);
         if (!resolvedChild) return null;
-        console.log(
-          `[Resolve] Field: ${child.field}, Child ID: ${child.id}, Kind: ${resolvedChild.kind}`,
-        );
+        //console.log(
+        //  `[Resolve] Field: ${child.field}, Child ID: ${child.id}, Kind: ${resolvedChild.kind}`,
+        //);
         return {
           ...resolvedChild,
           fieldName: child.field, // Preserve field name for display
@@ -345,6 +374,7 @@ function App() {
       sourceCode.substring(0, 50) + "...",
     );
     setLoading(true);
+    const start = performance.now();
     try {
       const res = await compileWorkman(sourceCode, "all");
       console.log("[Playground] Compilation result:", res);
@@ -376,23 +406,23 @@ function App() {
         console.log("[Playground] Loaded", cache.size, "lowered nodes");
 
         // Debug: Check for duplicate node kinds in lowered AST roots
-        const roots = res.loweredNodeStore.roots;
-        console.log("[DEBUG Lowered] Root count:", roots.length);
-        console.log("[DEBUG Lowered] Root IDs:", roots);
+        //const roots = res.loweredNodeStore.roots;
+        //console.log("[DEBUG Lowered] Root count:", roots.length);
+        //console.log("[DEBUG Lowered] Root IDs:", roots);
 
         // Check if roots have duplicate kinds
-        const rootKinds = roots.map((id: number) => {
-          const node = res.loweredNodeStore!.nodes[id];
-          return node ? node.kind : "unknown";
-        });
-        console.log("[DEBUG Lowered] Root kinds:", rootKinds);
+        //const rootKinds = roots.map((id: number) => {
+        //  const node = res.loweredNodeStore!.nodes[id];
+        //  return node ? node.kind : "unknown";
+        //});
+        //console.log("[DEBUG Lowered] Root kinds:", rootKinds);
 
         // Check for potential duplicates by comparing node content
         const kindCount: Record<string, number> = {};
         Object.values(res.loweredNodeStore.nodes).forEach((node: any) => {
           kindCount[node.kind] = (kindCount[node.kind] || 0) + 1;
         });
-        console.log("[DEBUG Lowered] Node kind counts:", kindCount);
+        //console.log("[DEBUG Lowered] Node kind counts:", kindCount);
 
         flushSync(() => {
           setLoweredCache(cache);
@@ -430,6 +460,7 @@ function App() {
       });
       setErrorLocation(null);
     } finally {
+      setCompileMs(Math.max(0, Math.round(performance.now() - start)));
       setLoading(false);
     }
   };
@@ -464,10 +495,27 @@ function App() {
         <div className="header-left">
           <h1>🗿 Workmangr Playground</h1>
           <span className="header-badge">alpha</span>
+          {isCliMode && (
+            <>
+              <span className="header-badge">CLI server</span>
+              <span
+                className={`header-badge cli-status ${
+                  cliStatus?.ok ? "ok" : "bad"
+                }`}
+                title={cliStatus?.error || ""}
+              >
+                {cliStatus?.ok
+                  ? `Connected ${cliStatus.latencyMs}ms`
+                  : "Disconnected"}
+              </span>
+            </>
+          )}
         </div>
         <div className="header-right">
           <div className={`status ${loading ? "loading" : "ready"}`}>
-            {loading ? "Compiling..." : "Ready"}
+            {loading
+              ? "Compiling..."
+              : `Ready${compileMs !== null ? ` (${compileMs}ms)` : ""}`}
           </div>
           <button
             className="theme-toggle"

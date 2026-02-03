@@ -1,7 +1,13 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import {
+  dirname,
+  fromFileUrl,
+  join,
+} from "https://deno.land/std@0.208.0/path/mod.ts";
 
-const WMC_ROOT = join(Deno.cwd(), "..");
+const SERVER_DIR = dirname(fromFileUrl(import.meta.url));
+const WMP_ROOT = join(SERVER_DIR, "..");
+const WMC_ROOT = join(WMP_ROOT, "..", "..");
 
 interface CompileRequest {
   source: string;

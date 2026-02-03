@@ -1,16 +1,29 @@
 {
   "tasks": {
-    "dev": {
+    "dev:server": {
       "dependencies": [
         "vite",
         "server"
       ]
     },
     "vite": {
-      "command": "deno run dev:vite"
+      "command": "export VITE_USE_CLI_SERVER=1 && npm run dev:vite"
     },
     "server": {
       "command": "deno run -A server/main.ts"
+    },
+    "build:wasm": {
+      "command": "grain compile --no-wasm-tail-call --no-bulk-memory ../../src/api/api.gr -o ./public/api.gr.wasm"
+    },
+    "build": {
+      "command": "deno task build:wasm && npm run build"
+    },
+    "dev": {
+      "command": "deno task dev:server"
     }
+  },
+  "deploy": {
+    "org": "mommysgoodpuppy",
+    "app": "wmplayground"
   }
 }

@@ -510,6 +510,7 @@ function App() {
               errorLocation={errorLocation}
               onCursorChange={handleCursorChange}
               highlightedSpan={highlightedSpan}
+              tokens={result?.tokens || []}
             />
           </div>
 

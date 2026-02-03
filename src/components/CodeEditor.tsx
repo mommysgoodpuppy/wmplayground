@@ -7,6 +7,7 @@ interface ErrorLocation {
 
 interface Token {
   kind: string;
+  text?: string;
   span: { start: number; end: number };
 }
 
@@ -131,6 +132,7 @@ function highlightCode(
   code: string,
   errorLocation?: ErrorLocation | null,
   highlightedSpan?: { start: number; end: number } | null,
+  tokens?: Token[],
 ): string {
   const escapeHtml = (text: string) =>
     text
@@ -138,121 +140,166 @@ function highlightCode(
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-  const keywords =
-    /\b(if|else|match|from|import|export|let|mut|rec|and|type|record|carrier|as|infix|infixl|infixr|prefix|infectious|domain|op|policy|annotate)\b/;
-  // Only match constructors at word boundaries - uppercase at START of identifier only
-  const types = /(?<![a-zA-Z_])[A-Z][a-zA-Z0-9_]*/;
-  const numbers = /\b\d+\b/;
-  const stringPattern = /"(?:[^"\\]|\\.)*"/;
-  const commentPattern = /(--|\/\/)[^\n]*/;
+  const keywordSet = new Set([
+    "if",
+    "else",
+    "match",
+    "from",
+    "import",
+    "export",
+    "let",
+    "mut",
+    "rec",
+    "and",
+    "type",
+    "record",
+    "carrier",
+    "as",
+    "infix",
+    "infixl",
+    "infixr",
+    "prefix",
+    "infectious",
+    "domain",
+    "op",
+    "policy",
+    "annotate",
+  ]);
+
+  const getOffsetFromLineCol = (
+    text: string,
+    line: number,
+    col: number,
+  ): number | null => {
+    if (line < 1 || col < 1) return null;
+    let currentLine = 1;
+    let currentCol = 1;
+    for (let i = 0; i < text.length; i++) {
+      if (currentLine === line && currentCol === col) return i;
+      const ch = text[i];
+      if (ch === "\n") {
+        currentLine++;
+        currentCol = 1;
+      } else {
+        currentCol++;
+      }
+    }
+    if (currentLine === line && currentCol === col) return text.length;
+    return null;
+  };
+
+  const errorStart = errorLocation
+    ? getOffsetFromLineCol(code, errorLocation.line, errorLocation.col)
+    : null;
+  const errorEnd = errorStart !== null
+    ? Math.min(code.length, errorStart + 100)
+    : null;
+
+  const getTokenClass = (token: Token): string | null => {
+    switch (token.kind) {
+      case "KwVar":
+      case "KwAllErrors":
+        return "hl-keyword";
+      case "LitBool":
+        return "hl-keyword";
+      case "LitNum":
+        return "hl-number";
+      case "LitString":
+      case "LitChar":
+        return "hl-string";
+      case "ConstructorTok":
+        return "hl-type";
+      case "LitName":
+        return token.text && keywordSet.has(token.text) ? "hl-keyword" : null;
+      default:
+        return null;
+    }
+  };
+
+  const orderedTokens = (tokens ?? [])
+    .filter((token) =>
+      token &&
+      token.kind !== "EOF" &&
+      token.span &&
+      typeof token.span.start === "number" &&
+      typeof token.span.end === "number" &&
+      token.span.end >= token.span.start
+    )
+    .sort((a, b) => a.span.start - b.span.start);
 
   let result = "";
-  let i = 0;
-  let currentLine = 1;
-  let currentCol = 0;
-  let inError = false;
-  let inHighlight = false;
 
-  while (i < code.length) {
-    // Check if we should start highlighting
-    if (highlightedSpan && i === highlightedSpan.start && !inHighlight) {
-      result += '<span class="hl-highlight">';
-      inHighlight = true;
+  const appendSegment = (text: string, className?: string) => {
+    if (!text) return;
+    const escaped = escapeHtml(text);
+    if (!className) {
+      result += escaped;
+      return;
     }
+    result += `<span class="${className}">${escaped}</span>`;
+  };
 
-    // Check if we should end highlighting
-    if (highlightedSpan && i === highlightedSpan.end && inHighlight) {
-      result += "</span>";
-      inHighlight = false;
-    }
-
-    // Track position for error highlighting
-    if (
-      errorLocation && currentLine === errorLocation.line &&
-      currentCol === errorLocation.col && !inError
-    ) {
-      result += '<span class="hl-error">';
-      inError = true;
-    }
-
-    // End error span after ~100 chars
-    if (inError && currentCol >= errorLocation!.col + 100) {
-      result += "</span>";
-      inError = false;
-    }
-
-    // Check for strings
-    const stringMatch = code.slice(i).match(stringPattern);
-    if (stringMatch && stringMatch.index === 0) {
-      result += `<span class="hl-string">${escapeHtml(stringMatch[0])}</span>`;
-      i += stringMatch[0].length;
-      currentCol += stringMatch[0].length;
-      continue;
-    }
-
-    // Check for comments
-    const commentMatch = code.slice(i).match(commentPattern);
-    if (commentMatch && commentMatch.index === 0) {
-      result += `<span class="hl-comment">${escapeHtml(commentMatch[0])
-        }</span>`;
-      i += commentMatch[0].length;
-      currentCol += commentMatch[0].length;
-      continue;
-    }
-
-    // Check for keywords
-    const keywordMatch = code.slice(i).match(keywords);
-    if (keywordMatch && keywordMatch.index === 0) {
-      result += `<span class="hl-keyword">${escapeHtml(keywordMatch[0])
-        }</span>`;
-      i += keywordMatch[0].length;
-      currentCol += keywordMatch[0].length;
-      continue;
-    }
-
-    // Check for types
-    const typeMatch = code.slice(i).match(types);
-    if (typeMatch && typeMatch.index === 0) {
-      result += `<span class="hl-type">${escapeHtml(typeMatch[0])}</span>`;
-      i += typeMatch[0].length;
-      currentCol += typeMatch[0].length;
-      continue;
-    }
-
-    // Check for numbers
-    const numberMatch = code.slice(i).match(numbers);
-    if (numberMatch && numberMatch.index === 0) {
-      result += `<span class="hl-number">${escapeHtml(numberMatch[0])}</span>`;
-      i += numberMatch[0].length;
-      currentCol += numberMatch[0].length;
-      continue;
-    }
-
-    // Regular character
-    const char = code[i];
-    if (char === "\n") {
-      if (inError) {
-        result += "</span>";
-        inError = false;
+  const appendRange = (start: number, end: number, baseClass?: string) => {
+    if (start >= end) return;
+    const boundaries = [start, end];
+    if (highlightedSpan) {
+      if (highlightedSpan.start > start && highlightedSpan.start < end) {
+        boundaries.push(highlightedSpan.start);
       }
-      result += "\n";
-      currentLine++;
-      currentCol = 0;
-    } else {
-      result += escapeHtml(char);
-      currentCol++;
+      if (highlightedSpan.end > start && highlightedSpan.end < end) {
+        boundaries.push(highlightedSpan.end);
+      }
     }
-    i++;
+    if (errorStart !== null && errorEnd !== null) {
+      if (errorStart > start && errorStart < end) boundaries.push(errorStart);
+      if (errorEnd > start && errorEnd < end) boundaries.push(errorEnd);
+    }
+    boundaries.sort((a, b) => a - b);
+    const unique = boundaries.filter((v, i, arr) =>
+      i === 0 || arr[i - 1] !== v
+    );
+
+    for (let i = 0; i < unique.length - 1; i++) {
+      const segStart = unique[i];
+      const segEnd = unique[i + 1];
+      if (segStart >= segEnd) continue;
+      const classes: string[] = [];
+      if (baseClass) classes.push(baseClass);
+      if (
+        highlightedSpan &&
+        segStart >= highlightedSpan.start &&
+        segEnd <= highlightedSpan.end
+      ) {
+        classes.push("hl-highlight");
+      }
+      if (
+        errorStart !== null &&
+        errorEnd !== null &&
+        segStart >= errorStart &&
+        segEnd <= errorEnd
+      ) {
+        classes.push("hl-error");
+      }
+      appendSegment(code.slice(segStart, segEnd), classes.join(" "));
+    }
+  };
+
+  let cursor = 0;
+
+  for (const token of orderedTokens) {
+    const start = Math.max(0, Math.min(code.length, token.span.start));
+    const end = Math.max(0, Math.min(code.length, token.span.end));
+    if (end <= start) continue;
+    if (start > cursor) {
+      appendRange(cursor, start);
+    }
+    const tokenClass = getTokenClass(token) ?? undefined;
+    appendRange(start, end, tokenClass);
+    cursor = end;
   }
 
-  // Close highlight span if still open
-  if (inHighlight) {
-    result += "</span>";
-  }
-
-  // Close error span if still open
-  if (inError) {
-    result += "</span>";
+  if (cursor < code.length) {
+    appendRange(cursor, code.length);
   }
 
   return result;

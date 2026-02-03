@@ -180,7 +180,7 @@ const handler = async (req: Request): Promise<Response> => {
 const port = 3001;
 try {
   console.log(
-    `🗿 Workmangr Playground API running on http://localhost:${port}`,
+    `🗿 Workman Playground API running on http://localhost:${port}`,
   );
   await serve(handler, { port });
 } catch (error) {

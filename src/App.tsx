@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import "./App.css";
 import { CodeEditor } from "./components/CodeEditor";
 import { ASTTreeView } from "./components/ASTTreeView";
 import { NodeInspector } from "./components/NodeInspector";
 import { LexerView } from "./components/LexerView";
+import { DocsViewer } from "./components/DocsViewer";
 import { checkCliHealth, compileWorkman } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
 
@@ -66,6 +67,9 @@ interface ErrorLocation {
   line: number;
   col: number;
 }
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 const defaultCode = `let input = "L1, R3, R1, L5, L2, L5";
 
@@ -169,10 +173,6 @@ function App() {
     import.meta.env.VITE_USE_CLI_SERVER === "1";
   const [code, setCode] = useState(defaultCode);
   const [result, setResult] = useState<CompilationResult | null>(null);
-  const [activeTab, setActiveTab] = useState<"lexer" | "parser">(() => {
-    const saved = localStorage.getItem("activeTab");
-    return (saved === "lexer" || saved === "parser") ? saved : "parser";
-  });
   const [loading, setLoading] = useState(false);
   const [compileMs, setCompileMs] = useState<number | null>(null);
   const [errorLocation, setErrorLocation] = useState<ErrorLocation | null>(
@@ -185,6 +185,41 @@ function App() {
   const [highlightedSpan, setHighlightedSpan] = useState<
     { start: number; end: number } | null
   >(null);
+  const [rightPane, setRightPane] = useState<"inspector" | "docs">(
+    "inspector",
+  );
+  const [middleView, setMiddleView] = useState<"ast" | "tokens">(() => {
+    const saved = localStorage.getItem("middleView");
+    return saved === "tokens" ? "tokens" : "ast";
+  });
+  const [panelRatios, setPanelRatios] = useState(() => {
+    const saved = localStorage.getItem("panelRatios");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as {
+          left: number;
+          middle: number;
+          right: number;
+        };
+        if (parsed.left && parsed.middle && parsed.right) {
+          return parsed;
+        }
+      } catch {
+        // Ignore invalid saved layout.
+      }
+    }
+    return { left: 0.36, middle: 0.34, right: 0.3 };
+  });
+  const [containerWidth, setContainerWidth] = useState(0);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const resizeStateRef = useRef<{
+    handle: "left" | "right";
+    startX: number;
+    startLeft: number;
+    startMiddle: number;
+    startRight: number;
+    usableWidth: number;
+  } | null>(null);
   const [surfaceCache, setSurfaceCache] = useState<Map<number, any>>(new Map());
   const [loweredCache, setLoweredCache] = useState<Map<number, any>>(new Map());
   const debounceTimer = useRef<number | null>(null);
@@ -194,10 +229,91 @@ function App() {
     { ok: boolean; latencyMs: number; error?: string } | null
   >(null);
 
-  // Persist active tab to localStorage
+  // Persist middle view to localStorage
   useEffect(() => {
-    localStorage.setItem("activeTab", activeTab);
-  }, [activeTab]);
+    localStorage.setItem("middleView", middleView);
+  }, [middleView]);
+
+  useEffect(() => {
+    localStorage.setItem("panelRatios", JSON.stringify(panelRatios));
+  }, [panelRatios]);
+
+  useEffect(() => {
+    if (!contentRef.current) return;
+    const updateWidth = () => {
+      if (contentRef.current) {
+        setContainerWidth(contentRef.current.clientWidth);
+      }
+    };
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(contentRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const beginResize = useCallback((
+    handle: "left" | "right",
+    startX: number,
+  ) => {
+    const gap = 8;
+    const resizerWidth = 6;
+    const totalGap = gap * 4 + resizerWidth * 2;
+    const usableWidth = Math.max(containerWidth - totalGap, 0);
+    const startLeft = panelRatios.left * usableWidth;
+    const startMiddle = panelRatios.middle * usableWidth;
+    const startRight = panelRatios.right * usableWidth;
+    resizeStateRef.current = {
+      handle,
+      startX,
+      startLeft,
+      startMiddle,
+      startRight,
+      usableWidth,
+    };
+  }, [containerWidth, panelRatios]);
+
+  const onResizeMove = useCallback((event: MouseEvent) => {
+    const state = resizeStateRef.current;
+    if (!state) return;
+    const minPanel = 220;
+    const dx = event.clientX - state.startX;
+    let left = state.startLeft;
+    let middle = state.startMiddle;
+    let right = state.startRight;
+
+    if (state.handle === "left") {
+      left = clamp(state.startLeft + dx, minPanel, state.usableWidth - 2 * minPanel);
+      middle = state.usableWidth - left - right;
+      middle = clamp(middle, minPanel, state.usableWidth - left - minPanel);
+    } else {
+      right = clamp(state.startRight - dx, minPanel, state.usableWidth - 2 * minPanel);
+      middle = state.usableWidth - left - right;
+      middle = clamp(middle, minPanel, state.usableWidth - left - minPanel);
+    }
+
+    const total = left + middle + right;
+    if (total <= 0) return;
+    setPanelRatios({
+      left: left / total,
+      middle: middle / total,
+      right: right / total,
+    });
+  }, []);
+
+  const endResize = useCallback(() => {
+    resizeStateRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const onMove = (event: MouseEvent) => onResizeMove(event);
+    const onUp = () => endResize();
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [endResize, onResizeMove]);
 
   // Poll CLI server health in dev mode
   useEffect(() => {
@@ -493,7 +609,7 @@ function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <h1>🗿 Workmangr Playground</h1>
+          <h1>🗿 Workman Playground</h1>
           <span className="header-badge">alpha</span>
           {isCliMode && (
             <>
@@ -527,28 +643,29 @@ function App() {
         </div>
       </header>
 
-      <nav className="main-tabs">
-        <button
-          className={`main-tab ${activeTab === "lexer" ? "active" : ""}`}
-          onClick={() => setActiveTab("lexer")}
-        >
-          Lexer
-        </button>
-        <button
-          className={`main-tab ${activeTab === "parser" ? "active" : ""}`}
-          onClick={() => setActiveTab("parser")}
-        >
-          Parser
-        </button>
-      </nav>
-
       <div className="main-card">
-        <div className="main-content">
+        <div
+          className="main-content resizable-grid"
+          ref={contentRef}
+          style={{
+            gridTemplateColumns: (() => {
+              const gap = 8;
+              const resizerWidth = 6;
+              const gapTotal = gap * 4 + resizerWidth * 2;
+              const usableWidth = Math.max(containerWidth - gapTotal, 0);
+              const left = Math.max(220, panelRatios.left * usableWidth);
+              const middle = Math.max(220, panelRatios.middle * usableWidth);
+              const right = Math.max(220, panelRatios.right * usableWidth);
+              return `${left}px ${resizerWidth}px ${middle}px ${resizerWidth}px ${right}px`;
+            })(),
+          }}
+        >
           <div className="panel editor-panel">
             <div className="panel-header">
               <h3>Code Editor</h3>
               <div className="cursor-info">
-                Pos {cursorPos.offset}, Ln {cursorPos.line}, Col {cursorPos.col}
+                Pos {cursorPos.offset}, Ln {cursorPos.line}, Col{" "}
+                {cursorPos.col}
               </div>
             </div>
             <CodeEditor
@@ -562,122 +679,172 @@ function App() {
             />
           </div>
 
-          {activeTab === "lexer"
-            ? (
-              <div className="panel lexer-panel">
-                <LexerView tokens={result?.tokens || []} sourceCode={code} />
+          <div
+            className="panel-resizer"
+            onMouseDown={(event) => beginResize("left", event.clientX)}
+            role="separator"
+            aria-orientation="vertical"
+          />
+
+          <div className="panel tree-panel">
+            <div className="panel-header">
+              <div className="panel-tabs">
+                <button
+                  className={`panel-tab ${
+                    middleView === "ast" ? "active" : ""
+                  }`}
+                  onClick={() => setMiddleView("ast")}
+                >
+                  AST Tree
+                </button>
+                <button
+                  className={`panel-tab ${
+                    middleView === "tokens" ? "active" : ""
+                  }`}
+                  onClick={() => setMiddleView("tokens")}
+                >
+                  Token Stream
+                </button>
               </div>
-            )
-            : (
-              <>
-                <div className="panel tree-panel">
-                  <div className="panel-header">
-                    <h3>AST Tree</h3>
-                    <div className="ast-controls">
-                      <div
-                        className={`ast-view-toggle ${
-                          astView === "lowered" ? "lowered" : ""
-                        }`}
-                      >
-                        <button
-                          className={`toggle-btn ${
-                            astView === "surface" ? "active" : ""
-                          }`}
-                          onClick={() => setAstView("surface")}
-                        >
-                          Surface
-                        </button>
-                        <button
-                          className={`toggle-btn ${
-                            astView === "lowered" ? "active" : ""
-                          }`}
-                          onClick={() => setAstView("lowered")}
-                        >
-                          Lowered
-                        </button>
-                      </div>
-                      <button
-                        className="copy-ast-btn"
-                        onClick={() => {
-                          const currentNodeStore = astView === "surface"
-                            ? result?.surfaceNodeStore
-                            : result?.loweredNodeStore;
-                          const currentCache = astView === "surface"
-                            ? surfaceCache
-                            : loweredCache;
-                          if (currentNodeStore) {
-                            const roots = currentNodeStore.roots.map((id) =>
-                              resolveNode(id, currentCache, new Set())
-                            );
-                            navigator.clipboard.writeText(
-                              JSON.stringify(roots, null, 2),
-                            );
-                          }
-                        }}
-                        disabled={!(result?.surfaceNodeStore ||
-                          result?.loweredNodeStore)}
-                      >
-                        Copy AST
-                      </button>
-                      <button
-                        className="copy-ast-btn"
-                        onClick={() => setCollapseSignal((s) => s + 1)}
-                        title="Collapse all nodes"
-                      >
-                        ⊟
-                      </button>
-                    </div>
+              {middleView === "ast" && (
+                <div className="ast-controls">
+                  <div
+                    className={`ast-view-toggle ${
+                      astView === "lowered" ? "lowered" : ""
+                    }`}
+                  >
+                    <button
+                      className={`toggle-btn ${
+                        astView === "surface" ? "active" : ""
+                      }`}
+                      onClick={() => setAstView("surface")}
+                    >
+                      Surface
+                    </button>
+                    <button
+                      className={`toggle-btn ${
+                        astView === "lowered" ? "active" : ""
+                      }`}
+                      onClick={() => setAstView("lowered")}
+                    >
+                      Lowered
+                    </button>
                   </div>
-                  <div className="tree-content" key={`tree-${astView}`}>
-                    {(() => {
+                  <button
+                    className="copy-ast-btn"
+                    onClick={() => {
                       const currentNodeStore = astView === "surface"
                         ? result?.surfaceNodeStore
                         : result?.loweredNodeStore;
                       const currentCache = astView === "surface"
                         ? surfaceCache
                         : loweredCache;
-
-                      if (!currentNodeStore || currentCache.size === 0) {
-                        return (
-                          <div className="tree-empty">
-                            Compile code to see AST
-                          </div>
+                      if (currentNodeStore) {
+                        const roots = currentNodeStore.roots.map((id) =>
+                          resolveNode(id, currentCache, new Set())
+                        );
+                        navigator.clipboard.writeText(
+                          JSON.stringify(roots, null, 2),
                         );
                       }
+                    }}
+                    disabled={!(result?.surfaceNodeStore ||
+                      result?.loweredNodeStore)}
+                  >
+                    Copy AST
+                  </button>
+                  <button
+                    className="copy-ast-btn"
+                    onClick={() => setCollapseSignal((s) => s + 1)}
+                    title="Collapse all nodes"
+                  >
+                    ⊟
+                  </button>
+                </div>
+              )}
+            </div>
+            {middleView === "tokens"
+              ? (
+                <div className="lexer-panel">
+                  <LexerView tokens={result?.tokens || []} sourceCode={code} />
+                </div>
+              )
+              : (
+                <div className="tree-content" key={`tree-${astView}`}>
+                  {(() => {
+                    const currentNodeStore = astView === "surface"
+                      ? result?.surfaceNodeStore
+                      : result?.loweredNodeStore;
+                    const currentCache = astView === "surface"
+                      ? surfaceCache
+                      : loweredCache;
 
-                      // Resolve all root nodes and their children
-                      const resolvedRoots = currentNodeStore.roots
-                        .map((id) => resolveNode(id, currentCache, new Set()))
-                        .filter(Boolean);
-
-                      const rootNode = {
-                        kind: "Program",
-                        id: 0,
-                        span: { start: 0, end: code.length },
-                        children: resolvedRoots,
-                      };
-
+                    if (!currentNodeStore || currentCache.size === 0) {
                       return (
-                        <ASTTreeView
-                          key={`ast-${astView}`}
-                          node={rootNode}
-                          onNodeClick={handleNodeClick}
-                          selectedNode={selectedNode}
-                          collapseSignal={collapseSignal}
-                        />
+                        <div className="tree-empty">
+                          Compile code to see AST
+                        </div>
                       );
-                    })()}
-                  </div>
-                </div>
+                    }
 
-                <div className="panel inspector-panel">
-                  <div className="panel-header">
-                    <h3>Node Inspector</h3>
-                  </div>
-                  <NodeInspector node={selectedNode} sourceCode={code} />
+                    // Resolve all root nodes and their children
+                    const resolvedRoots = currentNodeStore.roots
+                      .map((id) => resolveNode(id, currentCache, new Set()))
+                      .filter(Boolean);
+
+                    const rootNode = {
+                      kind: "Program",
+                      id: 0,
+                      span: { start: 0, end: code.length },
+                      children: resolvedRoots,
+                    };
+
+                    return (
+                      <ASTTreeView
+                        key={`ast-${astView}`}
+                        node={rootNode}
+                        onNodeClick={handleNodeClick}
+                        selectedNode={selectedNode}
+                        collapseSignal={collapseSignal}
+                      />
+                    );
+                  })()}
                 </div>
-              </>
-            )}
+              )}
+          </div>
+
+          <div
+            className="panel-resizer"
+            onMouseDown={(event) => beginResize("right", event.clientX)}
+            role="separator"
+            aria-orientation="vertical"
+          />
+
+          <div className="panel inspector-panel">
+            <div className="panel-header">
+              <div className="panel-tabs">
+                <button
+                  className={`panel-tab ${
+                    rightPane === "inspector" ? "active" : ""
+                  }`}
+                  onClick={() => setRightPane("inspector")}
+                >
+                  Inspector
+                </button>
+                <button
+                  className={`panel-tab ${
+                    rightPane === "docs" ? "active" : ""
+                  }`}
+                  onClick={() => setRightPane("docs")}
+                >
+                  Docs
+                </button>
+              </div>
+            </div>
+            {rightPane === "docs"
+              ? <DocsViewer />
+              : <NodeInspector node={selectedNode} sourceCode={code} />}
+          </div>
         </div>
       </div>
     </div>

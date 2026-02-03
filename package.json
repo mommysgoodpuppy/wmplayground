@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev:vite": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && node scripts/copy-docs.mjs && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -13,7 +13,9 @@
     "@wasmer/wasi": "^1.2.2",
     "buffer": "^6.0.3",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

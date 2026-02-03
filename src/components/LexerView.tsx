@@ -65,9 +65,12 @@ export function LexerView({ tokens, sourceCode }: LexerViewProps) {
       return "#ff0000";
     }
 
-    // Force identifiers to yellow to avoid conflict with rainbow brackets
-    if (token.kind === "LitName" || token.kind === "ConstructorTok") {
-      return "#ffd93d"; // yellow
+    // Identifiers vs Constructors - different colors
+    if (token.kind === "LitName") {
+      return "#ffd93d"; // yellow for identifiers
+    }
+    if (token.kind === "ConstructorTok") {
+      return "#4ec9b0"; // teal/cyan for constructors
     }
 
     // For brackets with mate information, use rainbow bracket colors
@@ -111,8 +114,7 @@ export function LexerView({ tokens, sourceCode }: LexerViewProps) {
       }
 
       result +=
-        `<span class="token" style="color: ${color}; font-weight: 500;" title="${tooltip}">${
-          escapeHtml(tokenText)
+        `<span class="token" style="color: ${color}; font-weight: 500;" title="${tooltip}">${escapeHtml(tokenText)
         }</span>`;
 
       lastEnd = token.span.end;

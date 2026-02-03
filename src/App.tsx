@@ -6,6 +6,47 @@ import { ASTTreeView } from "./components/ASTTreeView";
 import { NodeInspector } from "./components/NodeInspector";
 import { LexerView } from "./components/LexerView";
 import { compileWorkman, type Stage } from "./lib/api";
+import { useTheme } from "./hooks/useTheme";
+
+const SunIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2" />
+    <path d="M12 20v2" />
+    <path d="m4.93 4.93 1.41 1.41" />
+    <path d="m17.66 17.66 1.41 1.41" />
+    <path d="M2 12h2" />
+    <path d="M20 12h2" />
+    <path d="m6.34 17.66-1.41 1.41" />
+    <path d="m19.07 4.93-1.41 1.41" />
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+  </svg>
+);
 
 interface CompilationResult {
   success: boolean;
@@ -136,6 +177,7 @@ function App() {
   );
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [astView, setAstView] = useState<"surface" | "lowered">("surface");
+  const [collapseSignal, setCollapseSignal] = useState(0);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1, offset: 0 });
   const [highlightedSpan, setHighlightedSpan] = useState<
     { start: number; end: number } | null
@@ -144,6 +186,7 @@ function App() {
   const [loweredCache, setLoweredCache] = useState<Map<number, any>>(new Map());
   const debounceTimer = useRef<number | null>(null);
   const editorRef = useRef<any>(null);
+  const isTreeClickRef = useRef(false);
 
   // Persist active tab to localStorage
   useEffect(() => {
@@ -187,6 +230,13 @@ function App() {
   const handleNodeClick = (node: any) => {
     console.log("[Node Click] Clicked node:", node);
     console.log("[Node Click] Node ID:", node.id, "Kind:", node.kind);
+
+    // Set flag to prevent cursor change from overriding this selection
+    isTreeClickRef.current = true;
+    setTimeout(() => {
+      isTreeClickRef.current = false;
+    }, 100);
+
     setSelectedNode(node);
     if (node.span) {
       console.log("[Node Click] Setting highlight span:", node.span);
@@ -247,6 +297,11 @@ function App() {
     pos: { line: number; col: number; offset: number },
   ) => {
     setCursorPos(pos);
+
+    // Skip if selection came from tree click
+    if (isTreeClickRef.current) {
+      return;
+    }
 
     // Use the appropriate cache and nodeStore based on current view
     const currentNodeStore = astView === "surface"
@@ -319,6 +374,26 @@ function App() {
           cache.set(parseInt(id), node);
         });
         console.log("[Playground] Loaded", cache.size, "lowered nodes");
+
+        // Debug: Check for duplicate node kinds in lowered AST roots
+        const roots = res.loweredNodeStore.roots;
+        console.log("[DEBUG Lowered] Root count:", roots.length);
+        console.log("[DEBUG Lowered] Root IDs:", roots);
+
+        // Check if roots have duplicate kinds
+        const rootKinds = roots.map((id: number) => {
+          const node = res.loweredNodeStore!.nodes[id];
+          return node ? node.kind : "unknown";
+        });
+        console.log("[DEBUG Lowered] Root kinds:", rootKinds);
+
+        // Check for potential duplicates by comparing node content
+        const kindCount: Record<string, number> = {};
+        Object.values(res.loweredNodeStore.nodes).forEach((node: any) => {
+          kindCount[node.kind] = (kindCount[node.kind] || 0) + 1;
+        });
+        console.log("[DEBUG Lowered] Node kind counts:", kindCount);
+
         flushSync(() => {
           setLoweredCache(cache);
         });
@@ -381,178 +456,180 @@ function App() {
     handleCompile(code);
   }, []);
 
+  const { theme, toggleTheme } = useTheme();
+
   return (
     <div className="app">
       <header className="header">
-        <h1>🗿 Workmangr Playground</h1>
-        <p>Interactive compiler inspection for Workman Canonical</p>
+        <div className="header-left">
+          <h1>🗿 Workmangr Playground</h1>
+          <span className="header-badge">alpha</span>
+        </div>
+        <div className="header-right">
+          <div className={`status ${loading ? "loading" : "ready"}`}>
+            {loading ? "Compiling..." : "Ready"}
+          </div>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </div>
       </header>
 
-      <div className="controls">
-        <div className="tabs">
-          <button
-            className={`tab ${activeTab === "lexer" ? "active" : ""}`}
-            onClick={() => setActiveTab("lexer")}
-          >
-            Lexer
-          </button>
-          <button
-            className={`tab ${activeTab === "parser" ? "active" : ""}`}
-            onClick={() => setActiveTab("parser")}
-          >
-            Parser
-          </button>
-        </div>
-        <div className="status">
-          {loading ? "⏳ Compiling..." : "✓ Ready"}
-        </div>
-      </div>
+      <nav className="main-tabs">
+        <button
+          className={`main-tab ${activeTab === "lexer" ? "active" : ""}`}
+          onClick={() => setActiveTab("lexer")}
+        >
+          Lexer
+        </button>
+        <button
+          className={`main-tab ${activeTab === "parser" ? "active" : ""}`}
+          onClick={() => setActiveTab("parser")}
+        >
+          Parser
+        </button>
+      </nav>
 
-      <div className="main-content">
-        <div className="panel editor-panel">
-          <div className="panel-header">
-            <h3>Code Editor</h3>
-            <div className="cursor-info">
-              Pos {cursorPos.offset}, Ln {cursorPos.line}, Col {cursorPos.col}
+      <div className="main-card">
+        <div className="main-content">
+          <div className="panel editor-panel">
+            <div className="panel-header">
+              <h3>Code Editor</h3>
+              <div className="cursor-info">
+                Pos {cursorPos.offset}, Ln {cursorPos.line}, Col {cursorPos.col}
+              </div>
             </div>
+            <CodeEditor
+              ref={editorRef}
+              value={code}
+              onChange={setCode}
+              errorLocation={errorLocation}
+              onCursorChange={handleCursorChange}
+              highlightedSpan={highlightedSpan}
+            />
           </div>
-          <CodeEditor
-            ref={editorRef}
-            value={code}
-            onChange={setCode}
-            errorLocation={errorLocation}
-            onCursorChange={handleCursorChange}
-            highlightedSpan={highlightedSpan}
-          />
-        </div>
 
-        {activeTab === "lexer"
-          ? (
-            <div className="panel lexer-panel">
-              <LexerView tokens={result?.tokens || []} sourceCode={code} />
-            </div>
-          )
-          : (
-            <>
-              <div className="panel tree-panel">
-                <div className="panel-header">
-                  <h3>AST Tree</h3>
-                  <div className="ast-controls">
-                    <div className="ast-view-toggle">
-                      <button
-                        className={`toggle-btn ${astView === "surface" ? "active" : ""
-                          }`}
-                        onClick={() => setAstView("surface")}
+          {activeTab === "lexer"
+            ? (
+              <div className="panel lexer-panel">
+                <LexerView tokens={result?.tokens || []} sourceCode={code} />
+              </div>
+            )
+            : (
+              <>
+                <div className="panel tree-panel">
+                  <div className="panel-header">
+                    <h3>AST Tree</h3>
+                    <div className="ast-controls">
+                      <div
+                        className={`ast-view-toggle ${
+                          astView === "lowered" ? "lowered" : ""
+                        }`}
                       >
-                        Surface
+                        <button
+                          className={`toggle-btn ${
+                            astView === "surface" ? "active" : ""
+                          }`}
+                          onClick={() => setAstView("surface")}
+                        >
+                          Surface
+                        </button>
+                        <button
+                          className={`toggle-btn ${
+                            astView === "lowered" ? "active" : ""
+                          }`}
+                          onClick={() => setAstView("lowered")}
+                        >
+                          Lowered
+                        </button>
+                      </div>
+                      <button
+                        className="copy-ast-btn"
+                        onClick={() => {
+                          const currentNodeStore = astView === "surface"
+                            ? result?.surfaceNodeStore
+                            : result?.loweredNodeStore;
+                          const currentCache = astView === "surface"
+                            ? surfaceCache
+                            : loweredCache;
+                          if (currentNodeStore) {
+                            const roots = currentNodeStore.roots.map((id) =>
+                              resolveNode(id, currentCache, new Set())
+                            );
+                            navigator.clipboard.writeText(
+                              JSON.stringify(roots, null, 2),
+                            );
+                          }
+                        }}
+                        disabled={!(result?.surfaceNodeStore ||
+                          result?.loweredNodeStore)}
+                      >
+                        Copy AST
                       </button>
                       <button
-                        className={`toggle-btn ${astView === "lowered" ? "active" : ""
-                          }`}
-                        onClick={() => setAstView("lowered")}
+                        className="copy-ast-btn"
+                        onClick={() => setCollapseSignal((s) => s + 1)}
+                        title="Collapse all nodes"
                       >
-                        Lowered
+                        ⊟
                       </button>
                     </div>
-                    <button
-                      className="copy-ast-btn"
-                      onClick={() => {
-                        const currentNodeStore = astView === "surface"
-                          ? result?.surfaceNodeStore
-                          : result?.loweredNodeStore;
-                        const currentCache = astView === "surface"
-                          ? surfaceCache
-                          : loweredCache;
-                        if (currentNodeStore) {
-                          const roots = currentNodeStore.roots.map((id) =>
-                            resolveNode(id, currentCache, new Set())
-                          );
-                          navigator.clipboard.writeText(
-                            JSON.stringify(roots, null, 2),
-                          );
-                        }
-                      }}
-                      disabled={!(result?.surfaceNodeStore ||
-                        result?.loweredNodeStore)}
-                    >
-                      Copy AST
-                    </button>
+                  </div>
+                  <div className="tree-content" key={`tree-${astView}`}>
+                    {(() => {
+                      const currentNodeStore = astView === "surface"
+                        ? result?.surfaceNodeStore
+                        : result?.loweredNodeStore;
+                      const currentCache = astView === "surface"
+                        ? surfaceCache
+                        : loweredCache;
+
+                      if (!currentNodeStore || currentCache.size === 0) {
+                        return (
+                          <div className="tree-empty">
+                            Compile code to see AST
+                          </div>
+                        );
+                      }
+
+                      // Resolve all root nodes and their children
+                      const resolvedRoots = currentNodeStore.roots
+                        .map((id) => resolveNode(id, currentCache, new Set()))
+                        .filter(Boolean);
+
+                      const rootNode = {
+                        kind: "Program",
+                        id: 0,
+                        span: { start: 0, end: code.length },
+                        children: resolvedRoots,
+                      };
+
+                      return (
+                        <ASTTreeView
+                          key={`ast-${astView}`}
+                          node={rootNode}
+                          onNodeClick={handleNodeClick}
+                          selectedNode={selectedNode}
+                          collapseSignal={collapseSignal}
+                        />
+                      );
+                    })()}
                   </div>
                 </div>
-                <div className="tree-content">
-                  {(() => {
-                    const currentNodeStore = astView === "surface"
-                      ? result?.surfaceNodeStore
-                      : result?.loweredNodeStore;
-                    const currentCache = astView === "surface"
-                      ? surfaceCache
-                      : loweredCache;
 
-                    console.log("[AST Tree] Render check:", {
-                      astView,
-                      hasNodeStore: !!currentNodeStore,
-                      cacheSize: currentCache.size,
-                      roots: currentNodeStore?.roots,
-                    });
-
-                    if (!currentNodeStore || currentCache.size === 0) {
-                      console.log("[AST Tree] Showing empty state");
-                      return (
-                        <div className="tree-empty">
-                          Compile code to see AST
-                        </div>
-                      );
-                    }
-
-                    console.log(
-                      "[AST Tree] NodeStore roots:",
-                      currentNodeStore.roots,
-                    );
-                    console.log("[AST Tree] Cache size:", currentCache.size);
-
-                    // Resolve all root nodes and their children
-                    const resolvedRoots = currentNodeStore.roots
-                      .map((id) => {
-                        console.log("[AST Tree] Resolving root node:", id);
-                        const resolved = resolveNode(id, currentCache);
-                        console.log("[AST Tree] Resolved node:", resolved);
-                        return resolved;
-                      })
-                      .filter(Boolean);
-
-                    console.log(
-                      "[AST Tree] All resolved roots:",
-                      resolvedRoots,
-                    );
-
-                    const rootNode = {
-                      kind: "Program",
-                      id: 0,
-                      span: { start: 0, end: code.length },
-                      children: resolvedRoots,
-                    };
-
-                    console.log(
-                      "[AST Tree] Final root node for rendering:",
-                      rootNode,
-                    );
-
-                    return (
-                      <ASTTreeView
-                        node={rootNode}
-                        onNodeClick={handleNodeClick}
-                        selectedNode={selectedNode}
-                      />
-                    );
-                  })()}
+                <div className="panel inspector-panel">
+                  <div className="panel-header">
+                    <h3>Node Inspector</h3>
+                  </div>
+                  <NodeInspector node={selectedNode} sourceCode={code} />
                 </div>
-              </div>
-
-              <div className="panel inspector-panel">
-                <NodeInspector node={selectedNode} sourceCode={code} />
-              </div>
-            </>
-          )}
+              </>
+            )}
+        </div>
       </div>
     </div>
   );

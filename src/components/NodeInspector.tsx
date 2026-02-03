@@ -21,41 +21,40 @@ export function NodeInspector({ node, sourceCode }: NodeInspectorProps) {
       </div>
     );
   }
-  
+
   const getText = () => {
     if (node.span && sourceCode) {
       return sourceCode.substring(node.span.start, node.span.end);
     }
-    return '';
+    return "";
   };
-  
+
   const text = getText();
-  
+
   return (
     <div className="node-inspector">
-      <h3>Node Inspector</h3>
-      
       <div className="inspector-section">
         <div className="inspector-label">Kind</div>
         <div className="inspector-value">{node.kind}</div>
       </div>
-      
+
       {node.id !== undefined && (
         <div className="inspector-section">
           <div className="inspector-label">ID</div>
           <div className="inspector-value">{node.id}</div>
         </div>
       )}
-      
+
       {node.span && (
         <>
           <div className="inspector-section">
             <div className="inspector-label">Position</div>
             <div className="inspector-value">
-              {node.span.line !== undefined && `Line ${node.span.line}, Col ${node.span.col}`}
+              {node.span.line !== undefined &&
+                `Line ${node.span.line}, Col ${node.span.col}`}
             </div>
           </div>
-          
+
           <div className="inspector-section">
             <div className="inspector-label">Span</div>
             <div className="inspector-value">
@@ -64,14 +63,14 @@ export function NodeInspector({ node, sourceCode }: NodeInspectorProps) {
           </div>
         </>
       )}
-      
+
       {node.children && (
         <div className="inspector-section">
           <div className="inspector-label">Children</div>
           <div className="inspector-value">{node.children.length} nodes</div>
         </div>
       )}
-      
+
       {text && (
         <div className="inspector-section">
           <div className="inspector-label">Text</div>
@@ -80,14 +79,14 @@ export function NodeInspector({ node, sourceCode }: NodeInspectorProps) {
           </div>
         </div>
       )}
-      
+
       <div className="inspector-section">
         <div className="inspector-label">Properties</div>
         <div className="inspector-value">
           <pre className="inspector-json">
             {JSON.stringify(
               Object.fromEntries(
-                Object.entries(node).filter(([key]) => 
+                Object.entries(node).filter(([key]) =>
                   !['children', 'span', 'id', 'kind'].includes(key)
                 )
               ),

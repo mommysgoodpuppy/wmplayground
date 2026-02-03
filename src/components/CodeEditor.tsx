@@ -5,12 +5,18 @@ interface ErrorLocation {
   col: number;
 }
 
+interface Token {
+  kind: string;
+  span: { start: number; end: number };
+}
+
 interface CodeEditorProps {
   value: string;
   onChange: (value: string) => void;
   errorLocation?: ErrorLocation | null;
   onCursorChange?: (pos: { line: number; col: number; offset: number }) => void;
   highlightedSpan?: { start: number; end: number } | null;
+  tokens?: Token[];
 }
 
 export interface CodeEditorRef {
@@ -19,7 +25,7 @@ export interface CodeEditorRef {
 
 export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
   (
-    { value, onChange, errorLocation, onCursorChange, highlightedSpan },
+    { value, onChange, errorLocation, onCursorChange, highlightedSpan, tokens },
     ref,
   ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -77,7 +83,12 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       onCursorChange({ line, col, offset });
     };
 
-    const highlighted = highlightCode(value, errorLocation, highlightedSpan);
+    const highlighted = highlightCode(
+      value,
+      errorLocation,
+      highlightedSpan,
+      tokens,
+    );
 
     const lineCount = value.split("\n").length;
     const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
@@ -87,7 +98,6 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
         <div
           ref={lineNumbersRef}
           className="line-numbers"
-          style={{ overflowY: "auto" }}
         >
           {lineNumbers.map((num) => (
             <div key={num} className="line-number">{num}</div>
@@ -130,7 +140,8 @@ function highlightCode(
 
   const keywords =
     /\b(if|else|match|from|import|export|let|mut|rec|and|type|record|carrier|as|infix|infixl|infixr|prefix|infectious|domain|op|policy|annotate)\b/;
-  const types = /\b[A-Z][a-zA-Z0-9_]*\b/;
+  // Only match constructors at word boundaries - uppercase at START of identifier only
+  const types = /(?<![a-zA-Z_])[A-Z][a-zA-Z0-9_]*/;
   const numbers = /\b\d+\b/;
   const stringPattern = /"(?:[^"\\]|\\.)*"/;
   const commentPattern = /(--|\/\/)[^\n]*/;
@@ -182,9 +193,8 @@ function highlightCode(
     // Check for comments
     const commentMatch = code.slice(i).match(commentPattern);
     if (commentMatch && commentMatch.index === 0) {
-      result += `<span class="hl-comment">${
-        escapeHtml(commentMatch[0])
-      }</span>`;
+      result += `<span class="hl-comment">${escapeHtml(commentMatch[0])
+        }</span>`;
       i += commentMatch[0].length;
       currentCol += commentMatch[0].length;
       continue;
@@ -193,9 +203,8 @@ function highlightCode(
     // Check for keywords
     const keywordMatch = code.slice(i).match(keywords);
     if (keywordMatch && keywordMatch.index === 0) {
-      result += `<span class="hl-keyword">${
-        escapeHtml(keywordMatch[0])
-      }</span>`;
+      result += `<span class="hl-keyword">${escapeHtml(keywordMatch[0])
+        }</span>`;
       i += keywordMatch[0].length;
       currentCol += keywordMatch[0].length;
       continue;

@@ -14,10 +14,12 @@ interface ASTTreeViewProps {
   onNodeClick: (node: ASTNode) => void;
   selectedNode?: ASTNode;
   depth?: number;
+  collapseSignal?: number; // Increment to trigger collapse-all
 }
 
 export function ASTTreeView(
-  { node, onNodeClick, selectedNode, depth = 0 }: ASTTreeViewProps,
+  { node, onNodeClick, selectedNode, depth = 0, collapseSignal = 0 }:
+    ASTTreeViewProps,
 ) {
   const nodeRef = useRef<HTMLDivElement>(null);
   // Check if this node or any descendant is selected
@@ -33,19 +35,28 @@ export function ASTTreeView(
     return false;
   };
 
-  const shouldAutoExpand = depth < 2 ||
-    isDescendantSelected(node, selectedNode);
-  const [isExpanded, setIsExpanded] = useState(shouldAutoExpand);
+  const [isExpanded, setIsExpanded] = useState(depth < 1);
+  const prevCollapseSignal = useRef(collapseSignal);
 
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNode?.id === node.id;
 
-  // Update expansion when selection changes
+  // Collapse all when signal changes (except root)
   useEffect(() => {
-    if (shouldAutoExpand && !isExpanded) {
+    if (collapseSignal > prevCollapseSignal.current) {
+      prevCollapseSignal.current = collapseSignal;
+      if (depth > 0) {
+        setIsExpanded(false);
+      }
+    }
+  }, [collapseSignal, depth]);
+
+  // Auto-expand when a descendant becomes selected
+  useEffect(() => {
+    if (selectedNode && isDescendantSelected(node, selectedNode)) {
       setIsExpanded(true);
     }
-  }, [shouldAutoExpand, isExpanded]);
+  }, [selectedNode?.id]);
 
   // Scroll selected node into view
   useEffect(() => {
@@ -78,12 +89,13 @@ export function ASTTreeView(
         className={`ast-node-header ${isSelected ? "selected" : ""}`}
         onClick={handleClick}
       >
-        {hasChildren && (
-          <span className="ast-toggle" onClick={handleToggle}>
-            {isExpanded ? "▼" : "▶"}
-          </span>
-        )}
-        {!hasChildren && <span className="ast-toggle-spacer"></span>}
+        {hasChildren
+          ? (
+            <span className="ast-toggle" onClick={handleToggle}>
+              {isExpanded ? "−" : "+"}
+            </span>
+          )
+          : <span className="ast-toggle-spacer" />}
         <span className="ast-node-kind">{node.kind}</span>
         {node.preview && (
           <span className="ast-node-preview">[{node.preview}]</span>
@@ -115,6 +127,7 @@ export function ASTTreeView(
                 onNodeClick={onNodeClick}
                 selectedNode={selectedNode}
                 depth={depth + 1}
+                collapseSignal={collapseSignal}
               />
             </div>
           ))}

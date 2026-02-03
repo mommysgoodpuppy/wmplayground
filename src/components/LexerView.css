@@ -2,39 +2,42 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #1e1e1e;
+  background-color: var(--bg-card);
 }
 
 .lexer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 1rem;
-  background: #252526;
-  border-bottom: 1px solid #3e3e42;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-default);
+  min-height: 36px;
 }
 
 .lexer-header h3 {
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: #cccccc;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .token-count {
-  font-size: 0.8rem;
-  color: #858585;
-  font-family: 'Consolas', monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .lexer-content {
   flex: 1;
   overflow: auto;
   padding: 1rem;
+  background-color: var(--bg-editor);
 }
 
 .lexer-highlight {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;

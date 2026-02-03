@@ -1,0 +1,16 @@
+{
+  "tasks": {
+    "dev": {
+      "dependencies": [
+        "vite",
+        "server"
+      ]
+    },
+    "vite": {
+      "command": "deno run dev:vite"
+    },
+    "server": {
+      "command": "deno run -A server/main.ts"
+    }
+  }
+}

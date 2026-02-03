@@ -1,0 +1,125 @@
+import { useEffect, useRef, useState } from "react";
+import "./ASTTree.css";
+
+interface ASTNode {
+  id?: number;
+  kind: string;
+  span?: { start: number; end: number; line?: number; col?: number };
+  children?: ASTNode[];
+  [key: string]: any;
+}
+
+interface ASTTreeViewProps {
+  node: ASTNode;
+  onNodeClick: (node: ASTNode) => void;
+  selectedNode?: ASTNode;
+  depth?: number;
+}
+
+export function ASTTreeView(
+  { node, onNodeClick, selectedNode, depth = 0 }: ASTTreeViewProps,
+) {
+  const nodeRef = useRef<HTMLDivElement>(null);
+  // Check if this node or any descendant is selected
+  const isDescendantSelected = (
+    n: ASTNode,
+    target: ASTNode | undefined,
+  ): boolean => {
+    if (!target) return false;
+    if (n.id === target.id) return true;
+    if (n.children) {
+      return n.children.some((child) => isDescendantSelected(child, target));
+    }
+    return false;
+  };
+
+  const shouldAutoExpand = depth < 2 ||
+    isDescendantSelected(node, selectedNode);
+  const [isExpanded, setIsExpanded] = useState(shouldAutoExpand);
+
+  const hasChildren = node.children && node.children.length > 0;
+  const isSelected = selectedNode?.id === node.id;
+
+  // Update expansion when selection changes
+  useEffect(() => {
+    if (shouldAutoExpand && !isExpanded) {
+      setIsExpanded(true);
+    }
+  }, [shouldAutoExpand, isExpanded]);
+
+  // Scroll selected node into view
+  useEffect(() => {
+    if (isSelected && nodeRef.current) {
+      nodeRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    }
+  }, [isSelected]);
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onNodeClick(node);
+  };
+
+  return (
+    <div
+      ref={nodeRef}
+      className="ast-tree-node"
+      style={{ paddingLeft: depth > 0 ? "12px" : "0" }}
+    >
+      <div
+        className={`ast-node-header ${isSelected ? "selected" : ""}`}
+        onClick={handleClick}
+      >
+        {hasChildren && (
+          <span className="ast-toggle" onClick={handleToggle}>
+            {isExpanded ? "▼" : "▶"}
+          </span>
+        )}
+        {!hasChildren && <span className="ast-toggle-spacer"></span>}
+        <span className="ast-node-kind">{node.kind}</span>
+        {node.preview && (
+          <span className="ast-node-preview">[{node.preview}]</span>
+        )}
+        {node.id !== undefined && (
+          <span className="ast-node-id">#{node.id}</span>
+        )}
+        {node.span && (
+          <span className="ast-node-span">
+            {node.span.start}-{node.span.end}
+          </span>
+        )}
+      </div>
+
+      {hasChildren && isExpanded && (
+        <div className="ast-node-children">
+          {node.children!.map((child, i) => (
+            <div key={i}>
+              {child.fieldName && (
+                <div
+                  className="ast-field-label"
+                  style={{ paddingLeft: "12px" }}
+                >
+                  {child.fieldName}:
+                </div>
+              )}
+              <ASTTreeView
+                node={child}
+                onNodeClick={onNodeClick}
+                selectedNode={selectedNode}
+                depth={depth + 1}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

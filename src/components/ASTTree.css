@@ -1,0 +1,144 @@
+/* AST Tree View Styles */
+.tree-content {
+  padding: 0.5rem;
+  overflow-y: auto;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0; /* Allow shrinking below content width */
+}
+
+.tree-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #858585;
+}
+
+.ast-tree-node {
+  font-family: 'Consolas', monospace;
+  font-size: 0.85rem;
+}
+
+.ast-node-header {
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.1s;
+  white-space: nowrap;
+  min-width: fit-content;
+}
+
+.ast-node-header:hover {
+  background: #2a2d2e;
+}
+
+.ast-node-header.selected {
+  background: #094771;
+}
+
+.ast-toggle {
+  width: 16px;
+  display: inline-block;
+  cursor: pointer;
+  user-select: none;
+  color: #cccccc;
+}
+
+.ast-toggle-spacer {
+  width: 16px;
+  display: inline-block;
+}
+
+.ast-node-kind {
+  color: #4ec9b0;
+  font-weight: 500;
+}
+
+.ast-node-preview {
+  margin-left: 0.5rem;
+  color: #dcdcaa;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.ast-node-id {
+  margin-left: 0.5rem;
+  color: #858585;
+  font-size: 0.8rem;
+}
+
+.ast-node-span {
+  margin-left: auto;
+  color: #858585;
+  font-size: 0.75rem;
+}
+
+.ast-node-children {
+  margin-left: 0;
+}
+
+.ast-field-label {
+  font-size: 0.8rem;
+  color: #858585;
+  font-family: 'Consolas', monospace;
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+/* Node Inspector Styles */
+.node-inspector {
+  padding: 1rem;
+  color: #cccccc;
+}
+
+.inspector-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #858585;
+}
+
+.node-inspector h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: #cccccc;
+}
+
+.inspector-section {
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.inspector-label {
+  font-size: 0.75rem;
+  color: #858585;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.inspector-value {
+  font-family: 'Consolas', monospace;
+  font-size: 0.85rem;
+  color: #cccccc;
+}
+
+.inspector-text pre {
+  margin: 0;
+  padding: 0.5rem;
+  background: #252526;
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.inspector-json {
+  margin: 0;
+  padding: 0.5rem;
+  background: #252526;
+  border-radius: 3px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  color: #ce9178;
+}

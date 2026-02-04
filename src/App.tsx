@@ -181,6 +181,8 @@ function App() {
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [astView, setAstView] = useState<"surface" | "lowered">("surface");
   const [collapseSignal, setCollapseSignal] = useState(0);
+  const [expandSignal, setExpandSignal] = useState(0);
+  const [toggleSignal, setToggleSignal] = useState(0);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1, offset: 0 });
   const [highlightedSpan, setHighlightedSpan] = useState<
     { start: number; end: number } | null
@@ -615,9 +617,8 @@ function App() {
             <>
               <span className="header-badge">CLI server</span>
               <span
-                className={`header-badge cli-status ${
-                  cliStatus?.ok ? "ok" : "bad"
-                }`}
+                className={`header-badge cli-status ${cliStatus?.ok ? "ok" : "bad"
+                  }`}
                 title={cliStatus?.error || ""}
               >
                 {cliStatus?.ok
@@ -700,17 +701,15 @@ function App() {
             <div className="panel-header">
               <div className="panel-tabs">
                 <button
-                  className={`panel-tab ${
-                    middleView === "ast" ? "active" : ""
-                  }`}
+                  className={`panel-tab ${middleView === "ast" ? "active" : ""
+                    }`}
                   onClick={() => setMiddleView("ast")}
                 >
                   AST Tree
                 </button>
                 <button
-                  className={`panel-tab ${
-                    middleView === "tokens" ? "active" : ""
-                  }`}
+                  className={`panel-tab ${middleView === "tokens" ? "active" : ""
+                    }`}
                   onClick={() => setMiddleView("tokens")}
                 >
                   Token Stream
@@ -719,22 +718,19 @@ function App() {
               {middleView === "ast" && (
                 <div className="ast-controls">
                   <div
-                    className={`ast-view-toggle ${
-                      astView === "lowered" ? "lowered" : ""
-                    }`}
+                    className={`ast-view-toggle ${astView === "lowered" ? "lowered" : ""
+                      }`}
                   >
                     <button
-                      className={`toggle-btn ${
-                        astView === "surface" ? "active" : ""
-                      }`}
+                      className={`toggle-btn ${astView === "surface" ? "active" : ""
+                        }`}
                       onClick={() => setAstView("surface")}
                     >
                       Surface
                     </button>
                     <button
-                      className={`toggle-btn ${
-                        astView === "lowered" ? "active" : ""
-                      }`}
+                      className={`toggle-btn ${astView === "lowered" ? "active" : ""
+                        }`}
                       onClick={() => setAstView("lowered")}
                     >
                       Lowered
@@ -765,10 +761,18 @@ function App() {
                   </button>
                   <button
                     className="copy-ast-btn"
-                    onClick={() => setCollapseSignal((s) => s + 1)}
-                    title="Collapse all nodes"
+                    onClick={() => {
+                      const newSignal = toggleSignal + 1;
+                      setToggleSignal(newSignal);
+                      if (newSignal % 2 === 1) {
+                        setCollapseSignal((s) => s + 1);
+                      } else {
+                        setExpandSignal((s) => s + 1);
+                      }
+                    }}
+                    title={toggleSignal % 2 === 0 ? "Collapse all nodes" : "Expand all nodes"}
                   >
-                    ⊟
+                    {toggleSignal % 2 === 0 ? "⊟" : "⊕"}
                   </button>
                 </div>
               )}
@@ -816,6 +820,7 @@ function App() {
                         onNodeClick={handleNodeClick}
                         selectedNode={selectedNode}
                         collapseSignal={collapseSignal}
+                        expandSignal={expandSignal}
                       />
                     );
                   })()}
@@ -834,17 +839,15 @@ function App() {
             <div className="panel-header">
               <div className="panel-tabs">
                 <button
-                  className={`panel-tab ${
-                    rightPane === "inspector" ? "active" : ""
-                  }`}
+                  className={`panel-tab ${rightPane === "inspector" ? "active" : ""
+                    }`}
                   onClick={() => setRightPane("inspector")}
                 >
                   Inspector
                 </button>
                 <button
-                  className={`panel-tab ${
-                    rightPane === "docs" ? "active" : ""
-                  }`}
+                  className={`panel-tab ${rightPane === "docs" ? "active" : ""
+                    }`}
                   onClick={() => setRightPane("docs")}
                 >
                   Docs

@@ -15,10 +15,11 @@ interface ASTTreeViewProps {
   selectedNode?: ASTNode;
   depth?: number;
   collapseSignal?: number; // Increment to trigger collapse-all
+  expandSignal?: number; // Increment to trigger expand-all
 }
 
 export function ASTTreeView(
-  { node, onNodeClick, selectedNode, depth = 0, collapseSignal = 0 }:
+  { node, onNodeClick, selectedNode, depth = 0, collapseSignal = 0, expandSignal = 0 }:
     ASTTreeViewProps,
 ) {
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -37,6 +38,7 @@ export function ASTTreeView(
 
   const [isExpanded, setIsExpanded] = useState(depth < 1);
   const prevCollapseSignal = useRef(collapseSignal);
+  const prevExpandSignal = useRef(expandSignal);
 
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedNode?.id === node.id;
@@ -50,6 +52,14 @@ export function ASTTreeView(
       }
     }
   }, [collapseSignal, depth]);
+
+  // Expand all when signal changes
+  useEffect(() => {
+    if (expandSignal > prevExpandSignal.current) {
+      prevExpandSignal.current = expandSignal;
+      setIsExpanded(true);
+    }
+  }, [expandSignal]);
 
   // Auto-expand when a descendant becomes selected
   useEffect(() => {
@@ -110,8 +120,8 @@ export function ASTTreeView(
         )}
       </div>
 
-      {hasChildren && isExpanded && (
-        <div className="ast-node-children">
+      {hasChildren && (
+        <div className="ast-node-children" style={{ display: isExpanded ? 'block' : 'none' }}>
           {node.children!.map((child, i) => (
             <div key={i}>
               {child.fieldName && (
@@ -128,6 +138,7 @@ export function ASTTreeView(
                 selectedNode={selectedNode}
                 depth={depth + 1}
                 collapseSignal={collapseSignal}
+                expandSignal={expandSignal}
               />
             </div>
           ))}

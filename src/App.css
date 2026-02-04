@@ -627,6 +627,47 @@
   box-shadow: var(--btn-shadow);
 }
 
+.recovery-content {
+  padding: 0.5rem;
+}
+
+.recovery-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.recovery-item {
+  text-align: left;
+  border: 1px solid var(--border-default);
+  border-radius: 0.25rem;
+  background-color: var(--bg-card);
+  padding: 0.5rem 0.65rem;
+  cursor: pointer;
+}
+
+.recovery-item:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.recovery-item-kind {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-orange);
+}
+
+.recovery-item-msg {
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.recovery-item-span {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .editor-section,
 .output-section {
   display: flex;

@@ -52,6 +52,37 @@ const MoonIcon = () => (
 interface CompilationResult {
   success: boolean;
   tokens?: any[];
+  recovery?: {
+    missingSemicolons?: Array<{
+      kind: string;
+      text: string;
+      start: number;
+      end: number;
+      line: number;
+      col: number;
+      reason: string;
+    }>;
+    topLevel?: Array<{
+      kind: string;
+      text: string;
+      span: { line: number; col: number; start: number; end: number };
+    }>;
+    diagnostics?: Array<{
+      stage: string;
+      message: string;
+      span: { line: number; col: number; start: number; end: number };
+      clues?: Array<{ kind: string; text: string }>;
+    }>;
+  };
+  formatted?: string;
+  formattedVirtual?: string;
+  formattedVirtualArtifacts?: Array<{
+    kind: string;
+    text: string;
+    start: number;
+    end: number;
+    reason: string;
+  }>;
   surfaceNodeStore?: {
     roots: number[];
     nodes: { [id: number]: any };
@@ -190,9 +221,17 @@ function App() {
   const [rightPane, setRightPane] = useState<"inspector" | "docs">(
     "inspector",
   );
-  const [middleView, setMiddleView] = useState<"ast" | "tokens">(() => {
+  const [middleView, setMiddleView] = useState<
+    "ast" | "tokens" | "recovery" | "formatter"
+  >(() => {
     const saved = localStorage.getItem("middleView");
-    return saved === "tokens" ? "tokens" : "ast";
+    return saved === "tokens" || saved === "formatter" || saved === "recovery"
+      ? saved
+      : "ast";
+  });
+  const [formatterView, setFormatterView] = useState<"real" | "structural">(() => {
+    const saved = localStorage.getItem("formatterView");
+    return saved === "structural" ? saved : "real";
   });
   const [panelRatios, setPanelRatios] = useState(() => {
     const saved = localStorage.getItem("panelRatios");
@@ -235,6 +274,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem("middleView", middleView);
   }, [middleView]);
+
+  useEffect(() => {
+    localStorage.setItem("formatterView", formatterView);
+  }, [formatterView]);
 
   useEffect(() => {
     localStorage.setItem("panelRatios", JSON.stringify(panelRatios));
@@ -714,6 +757,20 @@ function App() {
                 >
                   Token Stream
                 </button>
+                <button
+                  className={`panel-tab ${middleView === "recovery" ? "active" : ""
+                    }`}
+                  onClick={() => setMiddleView("recovery")}
+                >
+                  Recovery
+                </button>
+                <button
+                  className={`panel-tab ${middleView === "formatter" ? "active" : ""
+                    }`}
+                  onClick={() => setMiddleView("formatter")}
+                >
+                  Formatter
+                </button>
               </div>
               {middleView === "ast" && (
                 <div className="ast-controls">
@@ -776,11 +833,130 @@ function App() {
                   </button>
                 </div>
               )}
+              {middleView === "formatter" && (
+                <div className="ast-controls">
+                  <div
+                    className={`ast-view-toggle ${formatterView === "structural" ? "lowered" : ""
+                      }`}
+                  >
+                    <button
+                      className={`toggle-btn ${formatterView === "real" ? "active" : ""
+                        }`}
+                      onClick={() => setFormatterView("real")}
+                    >
+                      Real
+                    </button>
+                    <button
+                      className={`toggle-btn ${formatterView === "structural" ? "active" : ""
+                        }`}
+                      onClick={() => setFormatterView("structural")}
+                    >
+                      Structural
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             {middleView === "tokens"
               ? (
                 <div className="lexer-panel">
                   <LexerView tokens={result?.tokens || []} sourceCode={code} />
+                </div>
+              )
+              : middleView === "recovery"
+              ? (
+                <div className="tree-content recovery-content">
+                  {(() => {
+                    const semis = result?.recovery?.missingSemicolons || [];
+                    const top = result?.recovery?.topLevel || [];
+                    const diagnostics = result?.recovery?.diagnostics || [];
+                    const hasAny = semis.length > 0 || top.length > 0 ||
+                      diagnostics.length > 0;
+                    if (!hasAny) {
+                      return (
+                        <div className="tree-empty">
+                          No parser recovery events.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="recovery-list">
+                        {semis.map((event, idx) => (
+                          <button
+                            key={`semi-${idx}`}
+                            className="recovery-item"
+                            onClick={() =>
+                              setHighlightedSpan({
+                                start: event.start,
+                                end: event.end,
+                              })}
+                          >
+                            <div className="recovery-item-kind">
+                              missingSemicolon
+                            </div>
+                            <div className="recovery-item-msg">
+                              {event.reason}
+                            </div>
+                            <div className="recovery-item-span">
+                              Ln {event.line}, Col {event.col} (offset {event.start})
+                            </div>
+                          </button>
+                        ))}
+                        {top.map((event, idx) => (
+                          <button
+                            key={`top-${idx}`}
+                            className="recovery-item"
+                            onClick={() =>
+                              setHighlightedSpan({
+                                start: event.span.start,
+                                end: event.span.end,
+                              })}
+                          >
+                            <div className="recovery-item-kind">
+                              {event.kind}
+                            </div>
+                            <div className="recovery-item-msg">
+                              {event.text}
+                            </div>
+                            <div className="recovery-item-span">
+                              Ln {event.span.line}, Col {event.span.col}
+                            </div>
+                          </button>
+                        ))}
+                        {diagnostics.map((diag, idx) => (
+                          <button
+                            key={`diag-${idx}`}
+                            className="recovery-item"
+                            onClick={() =>
+                              setHighlightedSpan({
+                                start: diag.span.start,
+                                end: diag.span.end,
+                              })}
+                          >
+                            <div className="recovery-item-kind">
+                              {diag.stage}
+                            </div>
+                            <div className="recovery-item-msg">
+                              {diag.message}
+                            </div>
+                            <div className="recovery-item-span">
+                              Ln {diag.span.line}, Col {diag.span.col}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )
+              : middleView === "formatter"
+              ? (
+                <div className="tree-content">
+                  <pre className="json-output">
+                    {formatterView === "real"
+                      ? result?.formatted || "Compile code to see formatter output"
+                      : result?.formattedVirtual || "Compile code to see formatter output"}
+                  </pre>
                 </div>
               )
               : (

@@ -1,25 +1,25 @@
 {
   "tasks": {
+    "dev": {
+      "command": "export VITE_USE_CLI_SERVER=1 && deno task dev:server"
+    },
+    "vite": {
+      "command": "npm run dev:vite"
+    },
     "dev:server": {
       "dependencies": [
         "vite",
         "server"
       ]
     },
-    "vite": {
-      "command": "export VITE_USE_CLI_SERVER=1 && npm run dev:vite"
-    },
     "server": {
       "command": "deno run -A server/main.ts"
     },
     "build:wasm": {
-      "command": "grain compile ../../src/core/error.gr && grain compile --no-wasm-tail-call --no-bulk-memory ../../src/api/api.gr -o ./public/api.gr.wasm"
+      "command": "grain compile ../../src/core/error.gr && grain compile --no-wasm-tail-call --no-bulk-memory ../../src/api/api.gr -o ./public/api.gr.wasm && grain compile --include-dirs ../../src --no-wasm-tail-call --no-bulk-memory ../../src/backends/wmc/wmc_api.gr -o ./public/wmc_api.gr.wasm"
     },
     "build": {
       "command": "deno task build:wasm && npm run build"
-    },
-    "dev": {
-      "command": "deno task dev:server"
     }
   },
   "deploy": {

@@ -1,20 +1,20 @@
-import { WASI, MemFS, init } from "@wasmer/wasi";
-import { Buffer } from "buffer";
+import {
+  WASI,
+  File,
+  OpenFile,
+  PreopenDirectory,
+  ConsoleStdout,
+  type Fd,
+  type Inode,
+} from "@bjorn3/browser_wasi_shim";
 
 const API_WASM_URL = "/api.gr.wasm";
+const WMC_WASM_URL = "/wmc_api.gr.wasm";
 const API_BASE = "http://localhost:3001/api";
 const USE_CLI_SERVER = import.meta.env.VITE_USE_CLI_SERVER === "1";
 
-let wasiInitPromise: Promise<void> | null = null;
 let wasmModulePromise: Promise<WebAssembly.Module> | null = null;
-
-function ensureWasiInit(): Promise<void> {
-  if (!wasiInitPromise) {
-    // @wasmer/wasi requires init in browser environments.
-    wasiInitPromise = init();
-  }
-  return wasiInitPromise;
-}
+let wmcModulePromise: Promise<WebAssembly.Module> | null = null;
 
 function getWasmModule(): Promise<WebAssembly.Module> {
   if (!wasmModulePromise) {
@@ -28,6 +28,20 @@ function getWasmModule(): Promise<WebAssembly.Module> {
     })();
   }
   return wasmModulePromise;
+}
+
+function getWmcModule(): Promise<WebAssembly.Module> {
+  if (!wmcModulePromise) {
+    wmcModulePromise = (async () => {
+      const res = await fetch(WMC_WASM_URL);
+      if (!res.ok) {
+        throw new Error(`Failed to load WMC wasm: ${res.status}`);
+      }
+      const bytes = await res.arrayBuffer();
+      return await WebAssembly.compile(bytes);
+    })();
+  }
+  return wmcModulePromise;
 }
 
 export type Stage = 'parse' | 'lower' | 'infer' | 'all';
@@ -106,51 +120,49 @@ export async function compileWorkman(
   // Stage is currently ignored by the browser runner but preserved for API parity.
   void stage;
 
-  (globalThis as typeof globalThis & { Buffer?: typeof Buffer }).Buffer = Buffer;
-  await ensureWasiInit();
-
   const wasmModule = await getWasmModule();
-  const memfs = new MemFS();
-  const inputPath = "/input.wm";
-  const file = memfs.open(inputPath, { read: true, write: true, create: true });
-  file.writeString(source);
-  file.seek(0);
 
-  const wasi = new WASI({
-    args: ["api.gr.wasm", inputPath],
-    env: {},
-    fs: memfs,
-  });
+  // Set up virtual filesystem with the input file
+  const inputFile = new File(new TextEncoder().encode(source));
+  const stdoutChunks: Uint8Array[] = [];
+  const stderrChunks: Uint8Array[] = [];
+
+  const fds: Fd[] = [
+    new OpenFile(new File([])),                          // 0: stdin
+    new ConsoleStdout((buf) => stdoutChunks.push(new Uint8Array(buf))),  // 1: stdout
+    new ConsoleStdout((buf) => stderrChunks.push(new Uint8Array(buf))),  // 2: stderr
+    new PreopenDirectory(".", new Map<string, Inode>([
+      ["input.wm", inputFile],
+    ])),                                                  // 3: preopened cwd
+  ];
+
+  const wasi = new WASI(
+    ["api.gr.wasm", "input.wm"],
+    [],
+    fds,
+  );
+
+  const dec = new TextDecoder();
+  const collectOutput = (chunks: Uint8Array[]) =>
+    chunks.map((c) => dec.decode(c, { stream: true })).join("");
 
   try {
-    const instance = await wasi.instantiate(wasmModule, {});
-    wasi.start(instance as WebAssembly.Instance);
+    const instance = await WebAssembly.instantiate(wasmModule, {
+      wasi_snapshot_preview1: wasi.wasiImport,
+    });
+    wasi.start(instance as unknown as { exports: { memory: WebAssembly.Memory; _start: () => unknown } });
   } catch (err) {
-    const wasiStderr =
-      typeof (wasi as WASI & { getStderrString?: () => string })
-        .getStderrString === "function"
-        ? (wasi as WASI & { getStderrString: () => string }).getStderrString()
-        : "";
-    const stderr = wasiStderr;
+    const stderr = collectOutput(stderrChunks);
     return {
       success: false,
       error: stderr || (err instanceof Error ? err.message : String(err)),
     };
   }
 
+  const stdout = collectOutput(stdoutChunks);
+  const stderr = collectOutput(stderrChunks);
+
   try {
-    const wasiStdout =
-      typeof (wasi as WASI & { getStdoutString?: () => string })
-        .getStdoutString === "function"
-        ? (wasi as WASI & { getStdoutString: () => string }).getStdoutString()
-        : "";
-    const wasiStderr =
-      typeof (wasi as WASI & { getStderrString?: () => string })
-        .getStderrString === "function"
-        ? (wasi as WASI & { getStderrString: () => string }).getStderrString()
-        : "";
-    const stdout = wasiStdout;
-    const stderr = wasiStderr;
     const output = stdout.trim();
     if (!output) {
       return {
@@ -163,18 +175,6 @@ export async function compileWorkman(
     const data = JSON.parse(output);
     return { success: true, ...(data ?? {}) } as CompilationResult;
   } catch (e) {
-    const wasiStdout =
-      typeof (wasi as WASI & { getStdoutString?: () => string })
-        .getStdoutString === "function"
-        ? (wasi as WASI & { getStdoutString: () => string }).getStdoutString()
-        : "";
-    const wasiStderr =
-      typeof (wasi as WASI & { getStderrString?: () => string })
-        .getStderrString === "function"
-        ? (wasi as WASI & { getStderrString: () => string }).getStderrString()
-        : "";
-    const stdout = wasiStdout;
-    const stderr = wasiStderr;
     console.error("[API] Failed to parse JSON:", e);
     console.error("[API] Output:", stdout.substring(0, 500));
     if (stderr) {
@@ -242,6 +242,64 @@ export async function checkCliHealth(): Promise<{
       ok: false,
       latencyMs: Math.round(performance.now() - start),
       error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export interface WmcResult {
+  success: boolean;
+  zigSource?: string;
+  error?: string;
+}
+
+export async function compileWmc(source: string): Promise<WmcResult> {
+  const wasmModule = await getWmcModule();
+
+  const inputFile = new File(new TextEncoder().encode(source));
+  const stdoutChunks: Uint8Array[] = [];
+  const stderrChunks: Uint8Array[] = [];
+
+  const fds: Fd[] = [
+    new OpenFile(new File([])),
+    new ConsoleStdout((buf) => stdoutChunks.push(new Uint8Array(buf))),
+    new ConsoleStdout((buf) => stderrChunks.push(new Uint8Array(buf))),
+    new PreopenDirectory(".", new Map<string, Inode>([
+      ["input.wm", inputFile],
+    ])),
+  ];
+
+  const wasi = new WASI(
+    ["wmc_api.gr.wasm", "input.wm"],
+    [],
+    fds,
+  );
+
+  const dec = new TextDecoder();
+  const collectOutput = (chunks: Uint8Array[]) =>
+    chunks.map((c) => dec.decode(c, { stream: true })).join("");
+
+  try {
+    const instance = await WebAssembly.instantiate(wasmModule, {
+      wasi_snapshot_preview1: wasi.wasiImport,
+    });
+    wasi.start(instance as unknown as { exports: { memory: WebAssembly.Memory; _start: () => unknown } });
+  } catch (err) {
+    const stderr = collectOutput(stderrChunks);
+    return {
+      success: false,
+      error: stderr || (err instanceof Error ? err.message : String(err)),
+    };
+  }
+
+  const stdout = collectOutput(stdoutChunks);
+
+  try {
+    const data = JSON.parse(stdout.trim());
+    return data as WmcResult;
+  } catch (e) {
+    return {
+      success: false,
+      error: `Failed to parse WMC output: ${e instanceof Error ? e.message : String(e)}\nOutput: ${stdout.substring(0, 200)}`,
     };
   }
 }

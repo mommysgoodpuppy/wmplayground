@@ -6,8 +6,13 @@ import { ASTTreeView } from "./components/ASTTreeView";
 import { NodeInspector } from "./components/NodeInspector";
 import { LexerView } from "./components/LexerView";
 import { DocsViewer } from "./components/DocsViewer";
-import { checkCliHealth, compileWorkman } from "./lib/api";
+import { ZigSourceView } from "./components/ZigSourceView";
+import { checkCliHealth, compileWmc, compileWorkman } from "./lib/api";
 import { useTheme } from "./hooks/useTheme";
+// @ts-ignore
+import ZigCompilerWorker from "./workers/zig-compiler.ts?worker";
+// @ts-ignore
+import ZigRunnerWorker from "./workers/zig-runner.ts?worker";
 
 const SunIcon = () => (
   <svg
@@ -222,17 +227,20 @@ function App() {
     "inspector",
   );
   const [middleView, setMiddleView] = useState<
-    "ast" | "tokens" | "recovery" | "formatter"
+    "ast" | "tokens" | "recovery" | "formatter" | "execution"
   >(() => {
     const saved = localStorage.getItem("middleView");
-    return saved === "tokens" || saved === "formatter" || saved === "recovery"
+    return saved === "tokens" || saved === "formatter" ||
+        saved === "recovery" || saved === "execution"
       ? saved
       : "ast";
   });
-  const [formatterView, setFormatterView] = useState<"real" | "structural">(() => {
-    const saved = localStorage.getItem("formatterView");
-    return saved === "structural" ? saved : "real";
-  });
+  const [formatterView, setFormatterView] = useState<"real" | "structural">(
+    () => {
+      const saved = localStorage.getItem("formatterView");
+      return saved === "structural" ? saved : "real";
+    },
+  );
   const [panelRatios, setPanelRatios] = useState(() => {
     const saved = localStorage.getItem("panelRatios");
     if (saved) {
@@ -253,14 +261,16 @@ function App() {
   });
   const [containerWidth, setContainerWidth] = useState(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const resizeStateRef = useRef<{
-    handle: "left" | "right";
-    startX: number;
-    startLeft: number;
-    startMiddle: number;
-    startRight: number;
-    usableWidth: number;
-  } | null>(null);
+  const resizeStateRef = useRef<
+    {
+      handle: "left" | "right";
+      startX: number;
+      startLeft: number;
+      startMiddle: number;
+      startRight: number;
+      usableWidth: number;
+    } | null
+  >(null);
   const [surfaceCache, setSurfaceCache] = useState<Map<number, any>>(new Map());
   const [loweredCache, setLoweredCache] = useState<Map<number, any>>(new Map());
   const debounceTimer = useRef<number | null>(null);
@@ -269,6 +279,89 @@ function App() {
   const [cliStatus, setCliStatus] = useState<
     { ok: boolean; latencyMs: number; error?: string } | null
   >(null);
+
+  // Execution state
+  const [execOutput, setExecOutput] = useState<string>("");
+  const [execZigSource, setExecZigSource] = useState<string>("");
+  const [execRunning, setExecRunning] = useState(false);
+  const zigWorkerRef = useRef<Worker | null>(null);
+  const runnerWorkerRef = useRef<Worker | null>(null);
+
+  const runZigSource = useCallback((zigSource: string) => {
+    setExecOutput((prev) => prev + "Compiling Zig → WASM...\n");
+
+    // Terminate previous workers
+    zigWorkerRef.current?.terminate();
+    runnerWorkerRef.current?.terminate();
+
+    const zigWorker = new ZigCompilerWorker() as Worker;
+    zigWorkerRef.current = zigWorker;
+
+    zigWorker.onmessage = (ev) => {
+      if (ev.data.stderr) {
+        setExecOutput((prev) => prev + ev.data.stderr);
+      } else if (ev.data.failed) {
+        setExecOutput((prev) => prev + "\n❌ Zig compilation failed\n");
+        setExecRunning(false);
+        zigWorker.terminate();
+      } else if (ev.data.compiled) {
+        setExecOutput((prev) => prev + "✓ WASM compiled\nRunning...\n\n");
+
+        const runnerWorker = new ZigRunnerWorker() as Worker;
+        runnerWorkerRef.current = runnerWorker;
+
+        runnerWorker.postMessage({ run: ev.data.compiled });
+
+        runnerWorker.onmessage = (rev) => {
+          if (rev.data.stderr) {
+            setExecOutput((prev) => prev + rev.data.stderr);
+          } else if (rev.data.done) {
+            setExecRunning(false);
+            runnerWorker.terminate();
+          }
+        };
+
+        zigWorker.terminate();
+      }
+    };
+
+    zigWorker.postMessage({ run: zigSource });
+  }, []);
+
+  const handleCompileWm = useCallback(async () => {
+    if (execRunning) return;
+    setExecRunning(true);
+    setExecOutput("Compiling Workman → Zig...\n");
+    setMiddleView("execution");
+
+    try {
+      const wmcResult = await compileWmc(code);
+      if (!wmcResult.success || !wmcResult.zigSource) {
+        setExecOutput((prev) =>
+          prev + `\n❌ WMC Error: ${wmcResult.error || "Unknown error"}\n`
+        );
+        setExecRunning(false);
+        return;
+      }
+
+      setExecZigSource(wmcResult.zigSource);
+      setExecOutput((prev) => prev + "✓ Zig source generated\n");
+      runZigSource(wmcResult.zigSource);
+    } catch (err) {
+      setExecOutput((prev) =>
+        prev +
+        `\n❌ Error: ${err instanceof Error ? err.message : String(err)}\n`
+      );
+      setExecRunning(false);
+    }
+  }, [code, execRunning, runZigSource]);
+
+  const handleRunZig = useCallback(() => {
+    if (execRunning || !execZigSource) return;
+    setExecRunning(true);
+    setExecOutput("");
+    runZigSource(execZigSource);
+  }, [execZigSource, execRunning, runZigSource]);
 
   // Persist middle view to localStorage
   useEffect(() => {
@@ -327,11 +420,19 @@ function App() {
     let right = state.startRight;
 
     if (state.handle === "left") {
-      left = clamp(state.startLeft + dx, minPanel, state.usableWidth - 2 * minPanel);
+      left = clamp(
+        state.startLeft + dx,
+        minPanel,
+        state.usableWidth - 2 * minPanel,
+      );
       middle = state.usableWidth - left - right;
       middle = clamp(middle, minPanel, state.usableWidth - left - minPanel);
     } else {
-      right = clamp(state.startRight - dx, minPanel, state.usableWidth - 2 * minPanel);
+      right = clamp(
+        state.startRight - dx,
+        minPanel,
+        state.usableWidth - 2 * minPanel,
+      );
       middle = state.usableWidth - left - right;
       middle = clamp(middle, minPanel, state.usableWidth - left - minPanel);
     }
@@ -538,7 +639,7 @@ function App() {
     const start = performance.now();
     try {
       const res = await compileWorkman(sourceCode, "all");
-      console.log("[Playground] Compilation result:", res);
+      //console.log("[Playground] Compilation result:", res);
       console.log("[Playground] res.success:", res.success);
       console.log("[Playground] Surface roots:", res.surfaceNodeStore?.roots);
       console.log("[Playground] Lowered roots:", res.loweredNodeStore?.roots);
@@ -660,8 +761,9 @@ function App() {
             <>
               <span className="header-badge">CLI server</span>
               <span
-                className={`header-badge cli-status ${cliStatus?.ok ? "ok" : "bad"
-                  }`}
+                className={`header-badge cli-status ${
+                  cliStatus?.ok ? "ok" : "bad"
+                }`}
                 title={cliStatus?.error || ""}
               >
                 {cliStatus?.ok
@@ -718,8 +820,7 @@ function App() {
             <div className="panel-header">
               <h3>Code Editor</h3>
               <div className="cursor-info">
-                Pos {cursorPos.offset}, Ln {cursorPos.line}, Col{" "}
-                {cursorPos.col}
+                Pos {cursorPos.offset}, Ln {cursorPos.line}, Col {cursorPos.col}
               </div>
             </div>
             <CodeEditor
@@ -744,50 +845,65 @@ function App() {
             <div className="panel-header">
               <div className="panel-tabs">
                 <button
-                  className={`panel-tab ${middleView === "ast" ? "active" : ""
-                    }`}
+                  className={`panel-tab ${
+                    middleView === "ast" ? "active" : ""
+                  }`}
                   onClick={() => setMiddleView("ast")}
                 >
                   AST Tree
                 </button>
                 <button
-                  className={`panel-tab ${middleView === "tokens" ? "active" : ""
-                    }`}
+                  className={`panel-tab ${
+                    middleView === "tokens" ? "active" : ""
+                  }`}
                   onClick={() => setMiddleView("tokens")}
                 >
                   Token Stream
                 </button>
                 <button
-                  className={`panel-tab ${middleView === "recovery" ? "active" : ""
-                    }`}
+                  className={`panel-tab ${
+                    middleView === "recovery" ? "active" : ""
+                  }`}
                   onClick={() => setMiddleView("recovery")}
                 >
                   Recovery
                 </button>
                 <button
-                  className={`panel-tab ${middleView === "formatter" ? "active" : ""
-                    }`}
+                  className={`panel-tab ${
+                    middleView === "formatter" ? "active" : ""
+                  }`}
                   onClick={() => setMiddleView("formatter")}
                 >
                   Formatter
+                </button>
+                <button
+                  className={`panel-tab ${
+                    middleView === "execution" ? "active" : ""
+                  }`}
+                  onClick={() => setMiddleView("execution")}
+                >
+                  Execution
                 </button>
               </div>
               {middleView === "ast" && (
                 <div className="ast-controls">
                   <div
-                    className={`ast-view-toggle ${astView === "lowered" ? "lowered" : ""
-                      }`}
+                    className={`ast-view-toggle ${
+                      astView === "lowered" ? "lowered" : ""
+                    }`}
                   >
                     <button
-                      className={`toggle-btn ${astView === "surface" ? "active" : ""
-                        }`}
+                      className={`toggle-btn ${
+                        astView === "surface" ? "active" : ""
+                      }`}
                       onClick={() => setAstView("surface")}
                     >
                       Surface
                     </button>
                     <button
-                      className={`toggle-btn ${astView === "lowered" ? "active" : ""
-                        }`}
+                      className={`toggle-btn ${
+                        astView === "lowered" ? "active" : ""
+                      }`}
                       onClick={() => setAstView("lowered")}
                     >
                       Lowered
@@ -827,7 +943,9 @@ function App() {
                         setExpandSignal((s) => s + 1);
                       }
                     }}
-                    title={toggleSignal % 2 === 0 ? "Collapse all nodes" : "Expand all nodes"}
+                    title={toggleSignal % 2 === 0
+                      ? "Collapse all nodes"
+                      : "Expand all nodes"}
                   >
                     {toggleSignal % 2 === 0 ? "⊟" : "⊕"}
                   </button>
@@ -836,24 +954,46 @@ function App() {
               {middleView === "formatter" && (
                 <div className="ast-controls">
                   <div
-                    className={`ast-view-toggle ${formatterView === "structural" ? "lowered" : ""
-                      }`}
+                    className={`ast-view-toggle ${
+                      formatterView === "structural" ? "lowered" : ""
+                    }`}
                   >
                     <button
-                      className={`toggle-btn ${formatterView === "real" ? "active" : ""
-                        }`}
+                      className={`toggle-btn ${
+                        formatterView === "real" ? "active" : ""
+                      }`}
                       onClick={() => setFormatterView("real")}
                     >
                       Real
                     </button>
                     <button
-                      className={`toggle-btn ${formatterView === "structural" ? "active" : ""
-                        }`}
+                      className={`toggle-btn ${
+                        formatterView === "structural" ? "active" : ""
+                      }`}
                       onClick={() => setFormatterView("structural")}
                     >
                       Structural
                     </button>
                   </div>
+                </div>
+              )}
+              {middleView === "execution" && (
+                <div className="ast-controls">
+                  <button
+                    className="copy-ast-btn"
+                    onClick={handleCompileWm}
+                    disabled={execRunning}
+                    style={{ fontWeight: "bold" }}
+                  >
+                    {execRunning ? "Running..." : "▶ Compile WM"}
+                  </button>
+                  <button
+                    className="copy-ast-btn"
+                    onClick={handleRunZig}
+                    disabled={execRunning || !execZigSource}
+                  >
+                    ▶ Run Zig
+                  </button>
                 </div>
               )}
             </div>
@@ -898,7 +1038,8 @@ function App() {
                               {event.reason}
                             </div>
                             <div className="recovery-item-span">
-                              Ln {event.line}, Col {event.col} (offset {event.start})
+                              Ln {event.line}, Col {event.col} (offset{" "}
+                              {event.start})
                             </div>
                           </button>
                         ))}
@@ -959,6 +1100,23 @@ function App() {
                   </pre>
                 </div>
               )
+              : middleView === "execution"
+              ? (
+                <div className="tree-content exec-panel">
+                  <div className="exec-console-label">Console Output</div>
+                  <div className="exec-console">
+                    {execOutput || "Click ▶ Run to execute your program."}
+                  </div>
+                  <div className="exec-zig-label">Generated Zig Source</div>
+                  <div className="exec-zig-panel">
+                    <ZigSourceView
+                      source={execZigSource}
+                      onChange={setExecZigSource}
+                      placeholder="No Zig source generated yet."
+                    />
+                  </div>
+                </div>
+              )
               : (
                 <div className="tree-content" key={`tree-${astView}`}>
                   {(() => {
@@ -1015,15 +1173,17 @@ function App() {
             <div className="panel-header">
               <div className="panel-tabs">
                 <button
-                  className={`panel-tab ${rightPane === "inspector" ? "active" : ""
-                    }`}
+                  className={`panel-tab ${
+                    rightPane === "inspector" ? "active" : ""
+                  }`}
                   onClick={() => setRightPane("inspector")}
                 >
                   Inspector
                 </button>
                 <button
-                  className={`panel-tab ${rightPane === "docs" ? "active" : ""
-                    }`}
+                  className={`panel-tab ${
+                    rightPane === "docs" ? "active" : ""
+                  }`}
                   onClick={() => setRightPane("docs")}
                 >
                   Docs

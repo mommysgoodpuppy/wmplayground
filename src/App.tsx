@@ -273,7 +273,7 @@ let process = (in) => {
 
 let main = => {
   print(process(input));
-}
+};
 `.trim();
 
 function App() {
@@ -292,6 +292,7 @@ function App() {
   const [expandSignal, setExpandSignal] = useState(0);
   const [toggleSignal, setToggleSignal] = useState(0);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1, offset: 0 });
+  const [editorScroll, setEditorScroll] = useState({ top: 0, left: 0 });
   const [highlightedSpan, setHighlightedSpan] = useState<
     { start: number; end: number } | null
   >(null);
@@ -299,14 +300,17 @@ function App() {
     "inspector",
   );
   const [middleView, setMiddleView] = useState<
-    "ast" | "tokens" | "parsemarks" | "formatter" | "execution"
+    "ast" | "tokens" | "marks" | "formatter" | "execution"
   >(() => {
     const saved = localStorage.getItem("middleView");
     if (saved === "recovery") {
-      return "parsemarks";
+      return "marks";
+    }
+    if (saved === "parsemarks") {
+      return "marks";
     }
     return saved === "tokens" || saved === "formatter" ||
-        saved === "parsemarks" || saved === "execution"
+        saved === "marks" || saved === "execution"
       ? saved
       : "ast";
   });
@@ -721,7 +725,11 @@ function App() {
   const groupedDiagnostics = (() => {
     const entries = markBundle?.entries || [];
     const diagnostics = entries.length > 0
-      ? entries.map((entry) => entry.diagnostic)
+      ? entries.map((entry) => ({
+        ...entry.diagnostic,
+        markKind: entry.mark.kind,
+        markText: entry.mark.text,
+      }))
       : (markBundle?.diagnostics || []);
     type Diag = {
       stage: string;
@@ -733,6 +741,8 @@ function App() {
         end: number;
       };
       clues?: Array<{ kind: string; text: string }>;
+      markKind?: string;
+      markText?: string;
     };
     type Group = { primary: Diag; also: Diag[] };
     const groups: Group[] = [];
@@ -1003,6 +1013,7 @@ function App() {
               tokens={result?.tokens || []}
               insertedSpans={parsemarkSpans}
               cursorOffset={cursorPos.offset}
+              onScrollChange={setEditorScroll}
             />
           </div>
 
@@ -1034,11 +1045,11 @@ function App() {
                 </button>
                 <button
                   className={`panel-tab ${
-                    middleView === "parsemarks" ? "active" : ""
+                    middleView === "marks" ? "active" : ""
                   }`}
-                  onClick={() => setMiddleView("parsemarks")}
+                  onClick={() => setMiddleView("marks")}
                 >
-                  Parsemarks
+                  Marks
                 </button>
                 <button
                   className={`panel-tab ${
@@ -1181,7 +1192,7 @@ function App() {
                   <LexerView tokens={result?.tokens || []} sourceCode={code} />
                 </div>
               )
-              : middleView === "parsemarks"
+              : middleView === "marks"
               ? (
                 <div className="tree-content recovery-content">
                   {(() => {
@@ -1190,7 +1201,7 @@ function App() {
                     if (!hasAny) {
                       return (
                         <div className="tree-empty">
-                          No parse marks yet.
+                          No marks yet.
                         </div>
                       );
                     }
@@ -1268,10 +1279,12 @@ function App() {
                             }}
                           >
                             <div className="recovery-item-kind">
-                              {group.primary.stage}
+                              {group.primary.markKind || group.primary.stage}
                             </div>
                             <div className="recovery-item-msg">
-                              {group.primary.message}
+                              {group.primary.markText && group.primary.markText.trim().length > 0
+                                ? `${group.primary.message}\n${group.primary.markText}`
+                                : group.primary.message}
                             </div>
                             <div className="recovery-item-span">
                               Ln {group.primary.span.line}, Col{" "}
@@ -1300,7 +1313,7 @@ function App() {
               )
               : middleView === "formatter"
               ? (
-                <div className="tree-content">
+                <div className="tree-content tree-content-formatter">
                   {(() => {
                     const formattedText = formatterView === "real"
                       ? result?.formatted || ""
@@ -1335,6 +1348,7 @@ function App() {
                         onChange={() => {}}
                         readOnly
                         placeholder="Compile code to see formatter output"
+                        syncScroll={editorScroll}
                       />
                     );
                   })()}

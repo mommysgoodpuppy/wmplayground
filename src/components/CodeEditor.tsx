@@ -1,4 +1,10 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 
 interface ErrorLocation {
   line: number;
@@ -22,6 +28,8 @@ interface CodeEditorProps {
   placeholder?: string;
   insertedSpans?: Array<{ start: number; end: number; className: string }>;
   cursorOffset?: number;
+  onScrollChange?: (pos: { top: number; left: number }) => void;
+  syncScroll?: { top: number; left: number } | null;
 }
 
 export interface CodeEditorRef {
@@ -41,6 +49,8 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       placeholder,
       insertedSpans,
       cursorOffset,
+      onScrollChange,
+      syncScroll,
     },
     ref,
   ) => {
@@ -70,15 +80,23 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       },
     }), [value]);
 
+    const syncScrollPositions = (top: number, left: number) => {
+      if (textareaRef.current && highlightRef.current) {
+        highlightRef.current.scrollTop = top;
+        highlightRef.current.scrollLeft = left;
+
+        if (lineNumbersRef.current) {
+          lineNumbersRef.current.scrollTop = top;
+        }
+      }
+    };
+
     const handleScroll = () => {
       if (textareaRef.current && highlightRef.current) {
-        highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-        highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
-
-        // Sync line numbers vertical scroll only
-        if (lineNumbersRef.current) {
-          lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
-        }
+        const top = textareaRef.current.scrollTop;
+        const left = textareaRef.current.scrollLeft;
+        syncScrollPositions(top, left);
+        onScrollChange?.({ top, left });
       }
     };
 
@@ -111,6 +129,18 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
 
     const lineCount = value.split("\n").length;
     const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
+
+    useEffect(() => {
+      if (!syncScroll || !textareaRef.current) return;
+      if (
+        textareaRef.current.scrollTop !== syncScroll.top ||
+        textareaRef.current.scrollLeft !== syncScroll.left
+      ) {
+        textareaRef.current.scrollTop = syncScroll.top;
+        textareaRef.current.scrollLeft = syncScroll.left;
+        syncScrollPositions(syncScroll.top, syncScroll.left);
+      }
+    }, [syncScroll?.top, syncScroll?.left]);
 
     return (
       <div className="code-editor-container">

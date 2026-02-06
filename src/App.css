@@ -463,13 +463,22 @@
 
 .tree-panel {
   grid-column: auto;
-  overflow-y: auto;
-  overflow-x: auto;
+  overflow: hidden;
+}
+
+.tree-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tree-content-formatter {
+  overflow: hidden;
 }
 
 .lexer-panel {
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .inspector-panel {
@@ -686,6 +695,7 @@
   margin-top: 0.2rem;
   font-size: 0.82rem;
   color: var(--text-primary);
+  white-space: pre-wrap;
 }
 
 .recovery-item-span {

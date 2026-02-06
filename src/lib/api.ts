@@ -90,7 +90,11 @@ export interface CompilationResult {
     }>;
   };
   formatted?: string;
+  formattedTokens?: any[];
   formattedVirtual?: string;
+  formattedVirtualTokens?: any[];
+  formattedFix?: string;
+  formattedFixTokens?: any[];
   formattedVirtualArtifacts?: Array<{
     kind: string;
     text: string;

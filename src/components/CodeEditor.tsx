@@ -18,6 +18,9 @@ interface CodeEditorProps {
   onCursorChange?: (pos: { line: number; col: number; offset: number }) => void;
   highlightedSpan?: { start: number; end: number } | null;
   tokens?: Token[];
+  readOnly?: boolean;
+  placeholder?: string;
+  insertedSpans?: Array<{ start: number; end: number; className: string }>;
 }
 
 export interface CodeEditorRef {
@@ -26,7 +29,17 @@ export interface CodeEditorRef {
 
 export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
   (
-    { value, onChange, errorLocation, onCursorChange, highlightedSpan, tokens },
+    {
+      value,
+      onChange,
+      errorLocation,
+      onCursorChange,
+      highlightedSpan,
+      tokens,
+      readOnly,
+      placeholder,
+      insertedSpans,
+    },
     ref,
   ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -89,6 +102,7 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       errorLocation,
       highlightedSpan,
       tokens,
+      insertedSpans,
     );
 
     const lineCount = value.split("\n").length;
@@ -119,8 +133,9 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
             onSelect={handleCursorChange}
             onClick={handleCursorChange}
             onKeyUp={handleCursorChange}
+            readOnly={readOnly}
             spellCheck={false}
-            placeholder="Enter Workman code here..."
+            placeholder={placeholder ?? "Enter Workman code here..."}
           />
         </div>
       </div>
@@ -133,6 +148,7 @@ function highlightCode(
   errorLocation?: ErrorLocation | null,
   highlightedSpan?: { start: number; end: number } | null,
   tokens?: Token[],
+  insertedSpans?: Array<{ start: number; end: number; className: string }>,
 ): string {
   const escapeHtml = (text: string) =>
     text
@@ -254,6 +270,12 @@ function highlightCode(
       if (errorStart > start && errorStart < end) boundaries.push(errorStart);
       if (errorEnd > start && errorEnd < end) boundaries.push(errorEnd);
     }
+    if (insertedSpans) {
+      for (const span of insertedSpans) {
+        if (span.start > start && span.start < end) boundaries.push(span.start);
+        if (span.end > start && span.end < end) boundaries.push(span.end);
+      }
+    }
     boundaries.sort((a, b) => a - b);
     const unique = boundaries.filter((v, i, arr) =>
       i === 0 || arr[i - 1] !== v
@@ -279,6 +301,13 @@ function highlightCode(
         segEnd <= errorEnd
       ) {
         classes.push("hl-error");
+      }
+      if (insertedSpans) {
+        for (const span of insertedSpans) {
+          if (segStart >= span.start && segEnd <= span.end) {
+            classes.push(span.className);
+          }
+        }
       }
       appendSegment(code.slice(segStart, segEnd), classes.join(" "));
     }

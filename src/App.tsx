@@ -80,7 +80,11 @@ interface CompilationResult {
     }>;
   };
   formatted?: string;
+  formattedTokens?: any[];
   formattedVirtual?: string;
+  formattedVirtualTokens?: any[];
+  formattedFix?: string;
+  formattedFixTokens?: any[];
   formattedVirtualArtifacts?: Array<{
     kind: string;
     text: string;
@@ -106,6 +110,40 @@ interface ErrorLocation {
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
+
+const normalizeToken = (tok: any) => `${tok.kind}:${tok.text ?? ""}`;
+const isIgnorableToken = (tok: any) =>
+  tok.kind === "LineComment" || tok.kind === "EOF";
+
+const computeInsertedSpans = (
+  sourceTokens: any[] | undefined,
+  formattedTokens: any[] | undefined,
+  shouldHighlight: (tok: any) => boolean,
+  className: string,
+) => {
+  const source = (sourceTokens ?? []).filter((t) => !isIgnorableToken(t));
+  const formatted = (formattedTokens ?? []).filter((t) =>
+    !isIgnorableToken(t)
+  );
+  let i = 0;
+  const spans: Array<{ start: number; end: number; className: string }> = [];
+  for (let j = 0; j < formatted.length; j++) {
+    const f = formatted[j];
+    const s = source[i];
+    if (s && normalizeToken(s) === normalizeToken(f)) {
+      i++;
+      continue;
+    }
+    if (shouldHighlight(f) && f.span) {
+      spans.push({
+        start: f.span.start,
+        end: f.span.end,
+        className,
+      });
+    }
+  }
+  return spans;
+};
 
 const defaultCode = `let input = "L1, R3, R1, L5, L2, L5";
 
@@ -235,10 +273,12 @@ function App() {
       ? saved
       : "ast";
   });
-  const [formatterView, setFormatterView] = useState<"real" | "structural">(
+  const [formatterView, setFormatterView] = useState<
+    "real" | "structural" | "fix"
+  >(
     () => {
       const saved = localStorage.getItem("formatterView");
-      return saved === "structural" ? saved : "real";
+      return saved === "structural" || saved === "fix" ? saved : "real";
     },
   );
   const [panelRatios, setPanelRatios] = useState(() => {
@@ -954,9 +994,7 @@ function App() {
               {middleView === "formatter" && (
                 <div className="ast-controls">
                   <div
-                    className={`ast-view-toggle ${
-                      formatterView === "structural" ? "lowered" : ""
-                    }`}
+                    className={`ast-view-toggle three pos-${formatterView}`}
                   >
                     <button
                       className={`toggle-btn ${
@@ -973,6 +1011,14 @@ function App() {
                       onClick={() => setFormatterView("structural")}
                     >
                       Structural
+                    </button>
+                    <button
+                      className={`toggle-btn ${
+                        formatterView === "fix" ? "active" : ""
+                      }`}
+                      onClick={() => setFormatterView("fix")}
+                    >
+                      Fix
                     </button>
                   </div>
                 </div>
@@ -1093,11 +1139,43 @@ function App() {
               : middleView === "formatter"
               ? (
                 <div className="tree-content">
-                  <pre className="json-output">
-                    {formatterView === "real"
-                      ? result?.formatted || "Compile code to see formatter output"
-                      : result?.formattedVirtual || "Compile code to see formatter output"}
-                  </pre>
+                  {(() => {
+                    const formattedText = formatterView === "real"
+                      ? result?.formatted || ""
+                      : formatterView === "structural"
+                      ? result?.formattedVirtual || ""
+                      : result?.formattedFix || "";
+                    const formattedTokens = formatterView === "real"
+                      ? result?.formattedTokens
+                      : formatterView === "structural"
+                      ? result?.formattedVirtualTokens
+                      : result?.formattedFixTokens;
+                    const insertedSpans = formatterView === "fix"
+                      ? computeInsertedSpans(
+                        result?.tokens,
+                        formattedTokens,
+                        (t) => t.kind === "SemiColon",
+                        "hl-inserted-semicolon",
+                      )
+                      : formatterView === "structural"
+                      ? computeInsertedSpans(
+                        result?.tokens,
+                        formattedTokens,
+                        (_t) => true,
+                        "hl-virtual",
+                      )
+                      : [];
+                    return (
+                      <CodeEditor
+                        value={formattedText}
+                        tokens={formattedTokens}
+                        insertedSpans={insertedSpans}
+                        onChange={() => {}}
+                        readOnly
+                        placeholder="Compile code to see formatter output"
+                      />
+                    );
+                  })()}
                 </div>
               )
               : middleView === "execution"

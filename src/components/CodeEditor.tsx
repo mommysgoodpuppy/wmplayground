@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 
 interface ErrorLocation {
   line: number;
@@ -21,6 +21,7 @@ interface CodeEditorProps {
   readOnly?: boolean;
   placeholder?: string;
   insertedSpans?: Array<{ start: number; end: number; className: string }>;
+  cursorOffset?: number;
 }
 
 export interface CodeEditorRef {
@@ -39,12 +40,14 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       readOnly,
       placeholder,
       insertedSpans,
+      cursorOffset,
     },
     ref,
   ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const highlightRef = useRef<HTMLDivElement>(null);
     const lineNumbersRef = useRef<HTMLDivElement>(null);
+    const [isFocused, setIsFocused] = useState(false);
 
     // Expose scrollToOffset method
     useImperativeHandle(ref, () => ({
@@ -103,6 +106,7 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       highlightedSpan,
       tokens,
       insertedSpans,
+      !readOnly && !isFocused ? cursorOffset ?? null : null,
     );
 
     const lineCount = value.split("\n").length;
@@ -133,6 +137,8 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
             onSelect={handleCursorChange}
             onClick={handleCursorChange}
             onKeyUp={handleCursorChange}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             readOnly={readOnly}
             spellCheck={false}
             placeholder={placeholder ?? "Enter Workman code here..."}
@@ -149,6 +155,7 @@ function highlightCode(
   highlightedSpan?: { start: number; end: number } | null,
   tokens?: Token[],
   insertedSpans?: Array<{ start: number; end: number; className: string }>,
+  ghostCursorOffset?: number | null,
 ): string {
   const escapeHtml = (text: string) =>
     text
@@ -276,6 +283,12 @@ function highlightCode(
         if (span.end > start && span.end < end) boundaries.push(span.end);
       }
     }
+    if (
+      ghostCursorOffset !== null && ghostCursorOffset !== undefined &&
+      ghostCursorOffset >= start && ghostCursorOffset <= end
+    ) {
+      boundaries.push(ghostCursorOffset);
+    }
     boundaries.sort((a, b) => a - b);
     const unique = boundaries.filter((v, i, arr) =>
       i === 0 || arr[i - 1] !== v
@@ -285,6 +298,12 @@ function highlightCode(
       const segStart = unique[i];
       const segEnd = unique[i + 1];
       if (segStart >= segEnd) continue;
+      if (
+        ghostCursorOffset !== null && ghostCursorOffset !== undefined &&
+        segStart === ghostCursorOffset
+      ) {
+        result += `<span class="hl-ghost-caret"></span>`;
+      }
       const classes: string[] = [];
       if (baseClass) classes.push(baseClass);
       if (
@@ -311,6 +330,13 @@ function highlightCode(
       }
       appendSegment(code.slice(segStart, segEnd), classes.join(" "));
     }
+
+    if (
+      ghostCursorOffset !== null && ghostCursorOffset !== undefined &&
+      ghostCursorOffset === end
+    ) {
+      result += `<span class="hl-ghost-caret"></span>`;
+    }
   };
 
   let cursor = 0;
@@ -329,6 +355,12 @@ function highlightCode(
 
   if (cursor < code.length) {
     appendRange(cursor, code.length);
+  }
+  if (
+    code.length === 0 && ghostCursorOffset !== null &&
+    ghostCursorOffset !== undefined && ghostCursorOffset === 0
+  ) {
+    result += `<span class="hl-ghost-caret"></span>`;
   }
 
   return result;

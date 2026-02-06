@@ -57,6 +57,29 @@ const MoonIcon = () => (
 interface CompilationResult {
   success: boolean;
   tokens?: any[];
+  marks?: {
+    missingSemicolons?: Array<{
+      kind: string;
+      text: string;
+      start: number;
+      end: number;
+      line: number;
+      col: number;
+      reason: string;
+    }>;
+    topLevel?: Array<{
+      kind: string;
+      text: string;
+      expected?: string;
+      span: { line: number; col: number; start: number; end: number };
+    }>;
+    diagnostics?: Array<{
+      stage: string;
+      message: string;
+      span: { line: number; col: number; start: number; end: number };
+      clues?: Array<{ kind: string; text: string }>;
+    }>;
+  };
   recovery?: {
     missingSemicolons?: Array<{
       kind: string;
@@ -70,6 +93,7 @@ interface CompilationResult {
     topLevel?: Array<{
       kind: string;
       text: string;
+      expected?: string;
       span: { line: number; col: number; start: number; end: number };
     }>;
     diagnostics?: Array<{
@@ -265,11 +289,14 @@ function App() {
     "inspector",
   );
   const [middleView, setMiddleView] = useState<
-    "ast" | "tokens" | "recovery" | "formatter" | "execution"
+    "ast" | "tokens" | "parsemarks" | "formatter" | "execution"
   >(() => {
     const saved = localStorage.getItem("middleView");
+    if (saved === "recovery") {
+      return "parsemarks";
+    }
     return saved === "tokens" || saved === "formatter" ||
-        saved === "recovery" || saved === "execution"
+        saved === "parsemarks" || saved === "execution"
       ? saved
       : "ast";
   });
@@ -670,6 +697,96 @@ function App() {
     }
   };
 
+  const jumpToSpan = (span: { start: number; end: number }) => {
+    const safeStart = Math.max(0, Math.min(code.length, span.start));
+    const safeEnd = Math.max(safeStart, Math.min(code.length, span.end));
+    setHighlightedSpan({
+      start: safeStart,
+      end: safeEnd > safeStart ? safeEnd : Math.min(code.length, safeStart + 1),
+    });
+    editorRef.current?.scrollToOffset(safeStart);
+  };
+
+  const markBundle = result?.marks ?? result?.recovery;
+  const groupedDiagnostics = (() => {
+    const diagnostics = markBundle?.diagnostics || [];
+    type Diag = {
+      stage: string;
+      message: string;
+      span: {
+        line: number;
+        col: number;
+        start: number;
+        end: number;
+      };
+      clues?: Array<{ kind: string; text: string }>;
+    };
+    type Group = { primary: Diag; also: Diag[] };
+    const groups: Group[] = [];
+    const normalizeStart = (offset: number) => {
+      if (code.length === 0) return offset;
+      let idx = Math.min(Math.max(offset - 1, 0), code.length - 1);
+      while (idx >= 0 && /\s/.test(code[idx])) {
+        idx -= 1;
+      }
+      return idx >= 0 ? idx : offset;
+    };
+    const containsStart = (outer: Diag, inner: Diag) =>
+      inner.span.start >= outer.span.start &&
+      inner.span.start <= outer.span.end;
+    const anchorOf = (diag: Diag) => normalizeStart(diag.span.start);
+    diagnostics.forEach((diag) => {
+      const diagAnchor = anchorOf(diag);
+      const host = groups.find((group) =>
+        anchorOf(group.primary) === diagAnchor ||
+        containsStart(group.primary, diag)
+      );
+      if (host) {
+        host.also.push(diag);
+      } else {
+        groups.push({ primary: diag, also: [] });
+      }
+    });
+    return groups;
+  })();
+
+  const parsemarkSpans = (() => {
+    if (!groupedDiagnostics.length) return [];
+    const spans: Array<{ start: number; end: number; className: string }> = [];
+    const clamp = (value: number, min: number, max: number) =>
+      Math.min(max, Math.max(min, value));
+    const findVisibleStart = (offset: number) => {
+      if (code.length === 0) return 0;
+      let idx = clamp(offset, 0, code.length - 1);
+      if (idx > 0 && code[idx] === "\n") idx -= 1;
+      while (idx > 0 && /\s/.test(code[idx])) {
+        idx -= 1;
+      }
+      return idx;
+    };
+    const pushSpan = (start: number, end: number) => {
+      const safeStart = clamp(start, 0, code.length);
+      const safeEnd = clamp(end, 0, code.length);
+      let finalStart = safeStart;
+      let finalEnd = safeEnd;
+      if (finalEnd <= finalStart) {
+        finalStart = findVisibleStart(finalStart);
+        finalEnd = Math.min(code.length, finalStart + 1);
+      } else if (finalStart < code.length && /\s/.test(code[finalStart])) {
+        finalStart = findVisibleStart(finalStart);
+      }
+      spans.push({
+        start: finalStart,
+        end: finalEnd,
+        className: "hl-error",
+      });
+    };
+    groupedDiagnostics.forEach((group) => {
+      pushSpan(group.primary.span.start, group.primary.span.end);
+    });
+    return spans;
+  })();
+
   const handleCompile = async (sourceCode: string) => {
     console.log(
       "[Playground] Compiling code:",
@@ -871,6 +988,8 @@ function App() {
               onCursorChange={handleCursorChange}
               highlightedSpan={highlightedSpan}
               tokens={result?.tokens || []}
+              insertedSpans={parsemarkSpans}
+              cursorOffset={cursorPos.offset}
             />
           </div>
 
@@ -902,11 +1021,11 @@ function App() {
                 </button>
                 <button
                   className={`panel-tab ${
-                    middleView === "recovery" ? "active" : ""
+                    middleView === "parsemarks" ? "active" : ""
                   }`}
-                  onClick={() => setMiddleView("recovery")}
+                  onClick={() => setMiddleView("parsemarks")}
                 >
-                  Recovery
+                  Parsemarks
                 </button>
                 <button
                   className={`panel-tab ${
@@ -1049,33 +1168,58 @@ function App() {
                   <LexerView tokens={result?.tokens || []} sourceCode={code} />
                 </div>
               )
-              : middleView === "recovery"
+              : middleView === "parsemarks"
               ? (
                 <div className="tree-content recovery-content">
                   {(() => {
-                    const semis = result?.recovery?.missingSemicolons || [];
-                    const top = result?.recovery?.topLevel || [];
-                    const diagnostics = result?.recovery?.diagnostics || [];
+                    const semis = markBundle?.missingSemicolons || [];
+                    const top = markBundle?.topLevel || [];
                     const hasAny = semis.length > 0 || top.length > 0 ||
-                      diagnostics.length > 0;
+                      groupedDiagnostics.length > 0;
                     if (!hasAny) {
                       return (
                         <div className="tree-empty">
-                          No parser recovery events.
+                          No parse marks yet.
                         </div>
                       );
                     }
+                    const shouldJump = (target: HTMLElement) => {
+                      const selection = window.getSelection();
+                      if (!selection || selection.toString().length === 0) {
+                        return true;
+                      }
+                      const anchor = selection.anchorNode;
+                      const focus = selection.focusNode;
+                      return !(
+                        (anchor && target.contains(anchor)) ||
+                        (focus && target.contains(focus))
+                      );
+                    };
                     return (
                       <div className="recovery-list">
                         {semis.map((event, idx) => (
-                          <button
+                          <div
                             key={`semi-${idx}`}
                             className="recovery-item"
-                            onClick={() =>
-                              setHighlightedSpan({
-                                start: event.start,
-                                end: event.end,
-                              })}
+                            role="button"
+                            tabIndex={0}
+                            onMouseUp={(e) => {
+                              if (shouldJump(e.currentTarget)) {
+                                jumpToSpan({
+                                  start: event.start,
+                                  end: event.end,
+                                });
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                jumpToSpan({
+                                  start: event.start,
+                                  end: event.end,
+                                });
+                              }
+                            }}
                           >
                             <div className="recovery-item-kind">
                               missingSemicolon
@@ -1087,17 +1231,31 @@ function App() {
                               Ln {event.line}, Col {event.col} (offset{" "}
                               {event.start})
                             </div>
-                          </button>
+                          </div>
                         ))}
                         {top.map((event, idx) => (
-                          <button
+                          <div
                             key={`top-${idx}`}
                             className="recovery-item"
-                            onClick={() =>
-                              setHighlightedSpan({
-                                start: event.span.start,
-                                end: event.span.end,
-                              })}
+                            role="button"
+                            tabIndex={0}
+                            onMouseUp={(e) => {
+                              if (shouldJump(e.currentTarget)) {
+                                jumpToSpan({
+                                  start: event.span.start,
+                                  end: event.span.end,
+                                });
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                jumpToSpan({
+                                  start: event.span.start,
+                                  end: event.span.end,
+                                });
+                              }
+                            }}
                           >
                             <div className="recovery-item-kind">
                               {event.kind}
@@ -1108,28 +1266,57 @@ function App() {
                             <div className="recovery-item-span">
                               Ln {event.span.line}, Col {event.span.col}
                             </div>
-                          </button>
+                          </div>
                         ))}
-                        {diagnostics.map((diag, idx) => (
-                          <button
+                        {groupedDiagnostics.map((group, idx) => (
+                          <div
                             key={`diag-${idx}`}
                             className="recovery-item"
-                            onClick={() =>
-                              setHighlightedSpan({
-                                start: diag.span.start,
-                                end: diag.span.end,
-                              })}
+                            role="button"
+                            tabIndex={0}
+                            onMouseUp={(e) => {
+                              if (shouldJump(e.currentTarget)) {
+                                jumpToSpan({
+                                  start: group.primary.span.start,
+                                  end: group.primary.span.end,
+                                });
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                jumpToSpan({
+                                  start: group.primary.span.start,
+                                  end: group.primary.span.end,
+                                });
+                              }
+                            }}
                           >
                             <div className="recovery-item-kind">
-                              {diag.stage}
+                              {group.primary.stage}
                             </div>
                             <div className="recovery-item-msg">
-                              {diag.message}
+                              {group.primary.message}
                             </div>
                             <div className="recovery-item-span">
-                              Ln {diag.span.line}, Col {diag.span.col}
+                              Ln {group.primary.span.line}, Col{" "}
+                              {group.primary.span.col}
                             </div>
-                          </button>
+                            {group.also.length > 0 && (
+                              <div className="recovery-item-also">
+                                <div className="recovery-item-also-label">
+                                  Also missing:
+                                </div>
+                                <ul className="recovery-item-also-list">
+                                  {group.also.map((diag, alsoIdx) => (
+                                    <li key={`diag-${idx}-also-${alsoIdx}`}>
+                                      {diag.message}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     );

@@ -664,10 +664,16 @@
   background-color: var(--bg-card);
   padding: 0.5rem 0.65rem;
   cursor: pointer;
+  user-select: text;
 }
 
 .recovery-item:hover {
   background-color: var(--bg-card-hover);
+}
+
+.recovery-item:focus-visible {
+  outline: 2px solid var(--accent-orange);
+  outline-offset: 2px;
 }
 
 .recovery-item-kind {
@@ -686,6 +692,22 @@
   margin-top: 0.2rem;
   font-size: 0.72rem;
   color: var(--text-muted);
+}
+
+.recovery-item-also {
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.recovery-item-also-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.recovery-item-also-list {
+  margin: 0.25rem 0 0 1rem;
+  padding: 0;
 }
 
 .editor-section,
@@ -838,6 +860,14 @@
   text-decoration: wavy underline red;
   text-decoration-thickness: 1px;
   text-underline-offset: 1px;
+}
+
+.hl-ghost-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.2em;
+  background: #e6e2d9;
+  vertical-align: -0.2em;
 }
 
 .hl-highlight {

@@ -67,6 +67,29 @@ export interface NodeStore {
 export interface CompilationResult {
   success: boolean;
   tokens?: any[];
+  marks?: {
+    missingSemicolons?: Array<{
+      kind: string;
+      text: string;
+      start: number;
+      end: number;
+      line: number;
+      col: number;
+      reason: string;
+    }>;
+    topLevel?: Array<{
+      kind: string;
+      text: string;
+      expected?: string;
+      span: { line: number; col: number; start: number; end: number };
+    }>;
+    diagnostics?: Array<{
+      stage: string;
+      message: string;
+      span: { line: number; col: number; start: number; end: number };
+      clues?: Array<{ kind: string; text: string }>;
+    }>;
+  };
   recovery?: {
     missingSemicolons?: Array<{
       kind: string;
@@ -80,6 +103,7 @@ export interface CompilationResult {
     topLevel?: Array<{
       kind: string;
       text: string;
+      expected?: string;
       span: { line: number; col: number; start: number; end: number };
     }>;
     diagnostics?: Array<{

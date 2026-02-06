@@ -68,20 +68,25 @@ export interface CompilationResult {
   success: boolean;
   tokens?: any[];
   marks?: {
-    missingSemicolons?: Array<{
-      kind: string;
-      text: string;
-      start: number;
-      end: number;
-      line: number;
-      col: number;
-      reason: string;
-    }>;
     topLevel?: Array<{
       kind: string;
       text: string;
       expected?: string;
       span: { line: number; col: number; start: number; end: number };
+    }>;
+    entries?: Array<{
+      mark: {
+        kind: string;
+        text: string;
+        expected?: string;
+        span: { line: number; col: number; start: number; end: number };
+      };
+      diagnostic: {
+        stage: string;
+        message: string;
+        span: { line: number; col: number; start: number; end: number };
+        clues?: Array<{ kind: string; text: string }>;
+      };
     }>;
     diagnostics?: Array<{
       stage: string;
@@ -91,20 +96,25 @@ export interface CompilationResult {
     }>;
   };
   recovery?: {
-    missingSemicolons?: Array<{
-      kind: string;
-      text: string;
-      start: number;
-      end: number;
-      line: number;
-      col: number;
-      reason: string;
-    }>;
     topLevel?: Array<{
       kind: string;
       text: string;
       expected?: string;
       span: { line: number; col: number; start: number; end: number };
+    }>;
+    entries?: Array<{
+      mark: {
+        kind: string;
+        text: string;
+        expected?: string;
+        span: { line: number; col: number; start: number; end: number };
+      };
+      diagnostic: {
+        stage: string;
+        message: string;
+        span: { line: number; col: number; start: number; end: number };
+        clues?: Array<{ kind: string; text: string }>;
+      };
     }>;
     diagnostics?: Array<{
       stage: string;

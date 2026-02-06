@@ -58,20 +58,25 @@ interface CompilationResult {
   success: boolean;
   tokens?: any[];
   marks?: {
-    missingSemicolons?: Array<{
-      kind: string;
-      text: string;
-      start: number;
-      end: number;
-      line: number;
-      col: number;
-      reason: string;
-    }>;
     topLevel?: Array<{
       kind: string;
       text: string;
       expected?: string;
       span: { line: number; col: number; start: number; end: number };
+    }>;
+    entries?: Array<{
+      mark: {
+        kind: string;
+        text: string;
+        expected?: string;
+        span: { line: number; col: number; start: number; end: number };
+      };
+      diagnostic: {
+        stage: string;
+        message: string;
+        span: { line: number; col: number; start: number; end: number };
+        clues?: Array<{ kind: string; text: string }>;
+      };
     }>;
     diagnostics?: Array<{
       stage: string;
@@ -81,20 +86,25 @@ interface CompilationResult {
     }>;
   };
   recovery?: {
-    missingSemicolons?: Array<{
-      kind: string;
-      text: string;
-      start: number;
-      end: number;
-      line: number;
-      col: number;
-      reason: string;
-    }>;
     topLevel?: Array<{
       kind: string;
       text: string;
       expected?: string;
       span: { line: number; col: number; start: number; end: number };
+    }>;
+    entries?: Array<{
+      mark: {
+        kind: string;
+        text: string;
+        expected?: string;
+        span: { line: number; col: number; start: number; end: number };
+      };
+      diagnostic: {
+        stage: string;
+        message: string;
+        span: { line: number; col: number; start: number; end: number };
+        clues?: Array<{ kind: string; text: string }>;
+      };
     }>;
     diagnostics?: Array<{
       stage: string;
@@ -709,7 +719,10 @@ function App() {
 
   const markBundle = result?.marks ?? result?.recovery;
   const groupedDiagnostics = (() => {
-    const diagnostics = markBundle?.diagnostics || [];
+    const entries = markBundle?.entries || [];
+    const diagnostics = entries.length > 0
+      ? entries.map((entry) => entry.diagnostic)
+      : (markBundle?.diagnostics || []);
     type Diag = {
       stage: string;
       message: string;
@@ -1172,10 +1185,8 @@ function App() {
               ? (
                 <div className="tree-content recovery-content">
                   {(() => {
-                    const semis = markBundle?.missingSemicolons || [];
                     const top = markBundle?.topLevel || [];
-                    const hasAny = semis.length > 0 || top.length > 0 ||
-                      groupedDiagnostics.length > 0;
+                    const hasAny = top.length > 0 || groupedDiagnostics.length > 0;
                     if (!hasAny) {
                       return (
                         <div className="tree-empty">
@@ -1197,42 +1208,6 @@ function App() {
                     };
                     return (
                       <div className="recovery-list">
-                        {semis.map((event, idx) => (
-                          <div
-                            key={`semi-${idx}`}
-                            className="recovery-item"
-                            role="button"
-                            tabIndex={0}
-                            onMouseUp={(e) => {
-                              if (shouldJump(e.currentTarget)) {
-                                jumpToSpan({
-                                  start: event.start,
-                                  end: event.end,
-                                });
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                jumpToSpan({
-                                  start: event.start,
-                                  end: event.end,
-                                });
-                              }
-                            }}
-                          >
-                            <div className="recovery-item-kind">
-                              missingSemicolon
-                            </div>
-                            <div className="recovery-item-msg">
-                              {event.reason}
-                            </div>
-                            <div className="recovery-item-span">
-                              Ln {event.line}, Col {event.col} (offset{" "}
-                              {event.start})
-                            </div>
-                          </div>
-                        ))}
                         {top.map((event, idx) => (
                           <div
                             key={`top-${idx}`}

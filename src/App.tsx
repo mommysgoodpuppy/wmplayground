@@ -134,6 +134,47 @@ interface CompilationResult {
     roots: number[];
     nodes: { [id: number]: any };
   };
+  typeDebug?: {
+    layer1?: {
+      constraints?: Array<{
+        kind: string;
+        left?: string;
+        right?: string;
+        label?: string;
+        origin?: { nodeId: number; description: string };
+      }>;
+      nodeTypes?: Array<{ id: number; type: string }>;
+      marks?: Array<{
+        reason: string;
+        message: string;
+        origin: { nodeId: number; description: string };
+        related?: Array<{ nodeId: number; description: string }>;
+        mark?: { kind: string; text?: string };
+      }>;
+    };
+    layer2?: {
+      constraints?: Array<{
+        kind: string;
+        left?: string;
+        right?: string;
+        label?: string;
+        origin?: { nodeId: number; description: string };
+      }>;
+      nodeTypes?: Array<{ id: number; type: string }>;
+      topBindings?: Array<{
+        name: string;
+        type: string;
+        quantifiers?: number[];
+      }>;
+      marks?: Array<{
+        reason: string;
+        message: string;
+        origin: { nodeId: number; description: string };
+        related?: Array<{ nodeId: number; description: string }>;
+        mark?: { kind: string; text?: string };
+      }>;
+    };
+  };
   error?: string;
 }
 
@@ -179,102 +220,25 @@ const computeInsertedSpans = (
   return spans;
 };
 
-const defaultCode = `let input = "L1, R3, R1, L5, L2, L5";
+const defaultCode = `
+type List<T> = Empty | Link<T, List<T>>;
 
-export type GenericError =
-  | Error;
-
-record Location = { x: Int, y: Int };
-record Operation = { direction: Direction, distance: Int };
-type Direction = L | R;
-type Orientation = N | E | S | W;
-let start: Location = .{ x= 0, y= 0 };
-
-// Function to parse a string into an Operation
-let produceOp = (in) => {
-  let intL = 'L' :> charToInt;
-  let intR = 'R' :> charToInt;
-  let val = (in, 0) :> list.at :> stripErr;
-  let direction = stripErr(
-    match(val) {
-      intL => { IOk(L) },
-      intR => { IOk(R) },
-      _ => { IErr(Error) }
-    }
-  );
-  let distance = (isDigit, in) 
-    :> list.filter 
-    :> posIntStringToInt;
-  let yoink = match(direction, distance) {
-    (direction, Some(distance)) => { 
-      IOk(Operation{ direction, distance }) 
-    },
-    (direction, None) => { 
-      IErr((direction, distance)) 
-    }
-  };
-  yoink
+let rec length = match(list) => {
+  Empty => { 0 },
+  Link(_, rest) => { length(rest) }
 };
 
-// Function to create a movement function based on orientation and distance
-let move = (orient, distance) => {
-  (pos) => {
-    match(orient) {
-      N => { .{ x= pos.x, y= pos.y + distance } },
-      E => { .{ x= pos.x + distance, y= pos.y } },
-      S => { .{ x= pos.x, y= pos.y - distance } },
-      W => { .{ x= pos.x - distance, y= pos.y } }
-    }
-  }
-};
-let rec walker = (opList, orient, location) => {
-  let (opx, opList2) = stripErr(list.uncons(opList));
-  let newOrient = match((opx.direction, orient)) {
-    (L, N) => { W },
-    (L, E) => { N },
-    (L, S) => { E },
-    (L, W) => { S },
-    (R, N) => { E },
-    (R, E) => { S },
-    (R, S) => { W },
-    (R, W) => { N }
-  };
-  let amount = opx.distance;
-  let newLoc = move(newOrient, amount)(location);
-  if (list.length(opList2) > 0) { 
-    walker(opList2, newOrient, newLoc) 
-  } else {
-    newLoc
-  }
-};
-
-let rec yoink = (infectedList) => {
-  match(list.uncons(infectedList)) {
-    IOk((head, tail)) => {
-      match(head, yoink(tail)) {
-        (IOk(value), IOk(restList)) => { IOk(Link(value, restList)) },
-        (IErr(err), _) => { IErr(err) },
-        (_, IErr(err)) => { IErr(err) }
-      }
-    },
-    IErr(_) => { IOk(Empty) }
-  }
-};
-
-let process = (in) => {
-  let str = stringToList(in);
-  let cleanedStr = list.remove(char(" "), str);
-  let opStrList = list.splitBy(cleanedStr, char(","));
-  let opList = list.map(produceOp, opStrList);
-  let cleanOpList = stripErr(yoink(opList));
-  let finalLoc = walker(cleanOpList, N, start);
-  abs(finalLoc.x) + abs(finalLoc.y)
-};
-
-let main = => {
-  print(process(input));
-};
+let rec isEven = (n) => { isOdd(n) } and isOdd = (n) => { isEven(n) };
 `.trim();
+
+const middleViewOptions = [
+  { value: "ast", label: "AST Tree" },
+  { value: "types", label: "Types" },
+  { value: "tokens", label: "Token Stream" },
+  { value: "marks", label: "Marks" },
+  { value: "formatter", label: "Formatter" },
+  { value: "execution", label: "Execution" },
+] as const;
 
 function App() {
   const isCliMode = import.meta.env.MODE === "development" &&
@@ -300,7 +264,7 @@ function App() {
     "inspector",
   );
   const [middleView, setMiddleView] = useState<
-    "ast" | "tokens" | "marks" | "formatter" | "execution"
+    "ast" | "types" | "tokens" | "marks" | "formatter" | "execution"
   >(() => {
     const saved = localStorage.getItem("middleView");
     if (saved === "recovery") {
@@ -309,7 +273,7 @@ function App() {
     if (saved === "parsemarks") {
       return "marks";
     }
-    return saved === "tokens" || saved === "formatter" ||
+    return saved === "types" || saved === "tokens" || saved === "formatter" ||
         saved === "marks" || saved === "execution"
       ? saved
       : "ast";
@@ -1026,47 +990,27 @@ function App() {
 
           <div className="panel tree-panel">
             <div className="panel-header">
-              <div className="panel-tabs">
-                <button
-                  className={`panel-tab ${
-                    middleView === "ast" ? "active" : ""
-                  }`}
-                  onClick={() => setMiddleView("ast")}
+              <div className="panel-view-picker">
+                <label className="panel-view-label" htmlFor="middle-view-select">
+                  View
+                </label>
+                <select
+                  id="middle-view-select"
+                  className="panel-view-select"
+                  value={middleView}
+                  onChange={(event) =>
+                    setMiddleView(
+                      event.target.value as
+                        "ast" | "types" | "tokens" | "marks" | "formatter" |
+                          "execution",
+                    )}
                 >
-                  AST Tree
-                </button>
-                <button
-                  className={`panel-tab ${
-                    middleView === "tokens" ? "active" : ""
-                  }`}
-                  onClick={() => setMiddleView("tokens")}
-                >
-                  Token Stream
-                </button>
-                <button
-                  className={`panel-tab ${
-                    middleView === "marks" ? "active" : ""
-                  }`}
-                  onClick={() => setMiddleView("marks")}
-                >
-                  Marks
-                </button>
-                <button
-                  className={`panel-tab ${
-                    middleView === "formatter" ? "active" : ""
-                  }`}
-                  onClick={() => setMiddleView("formatter")}
-                >
-                  Formatter
-                </button>
-                <button
-                  className={`panel-tab ${
-                    middleView === "execution" ? "active" : ""
-                  }`}
-                  onClick={() => setMiddleView("execution")}
-                >
-                  Execution
-                </button>
+                  {middleViewOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               {middleView === "ast" && (
                 <div className="ast-controls">
@@ -1190,6 +1134,157 @@ function App() {
               ? (
                 <div className="lexer-panel">
                   <LexerView tokens={result?.tokens || []} sourceCode={code} />
+                </div>
+              )
+              : middleView === "types"
+              ? (
+                <div className="tree-content recovery-content">
+                  {(() => {
+                    const layer1 = result?.typeDebug?.layer1;
+                    const layer2 = result?.typeDebug?.layer2;
+                    const hasData = Boolean(layer1 || layer2);
+                    if (!hasData) {
+                      return <div className="tree-empty">Compile code to inspect types</div>;
+                    }
+
+                    const layer1NodeTypes = [...(layer1?.nodeTypes || [])].sort((a, b) => a.id - b.id);
+                    const layer2NodeTypes = [...(layer2?.nodeTypes || [])].sort((a, b) => a.id - b.id);
+                    const bindings = [...(layer2?.topBindings || [])].sort((a, b) =>
+                      a.name.localeCompare(b.name)
+                    );
+
+                    const renderConstraint = (constraint: {
+                      kind: string;
+                      left?: string;
+                      right?: string;
+                      label?: string;
+                      origin?: { nodeId: number; description: string };
+                    }) => {
+                      if (constraint.kind === "Equality") {
+                        return `${constraint.left || "?"} ~ ${constraint.right || "?"} (${constraint.origin?.description || "unknown origin"})`;
+                      }
+                      return `${constraint.label || "domain"} (${constraint.origin?.description || "unknown origin"})`;
+                    };
+
+                    return (
+                      <div className="type-debug">
+                        <section className="type-block">
+                          <h4>Top Bindings (Layer 2)</h4>
+                          {bindings.length === 0
+                            ? <div className="type-empty">No top-level bindings inferred yet.</div>
+                            : (
+                              <div className="type-list">
+                                {bindings.map((binding) => (
+                                  <div key={binding.name} className="type-item">
+                                    <code>{binding.name}</code>
+                                    <span> : </span>
+                                    <code>{binding.type}</code>
+                                    {binding.quantifiers && binding.quantifiers.length > 0 && (
+                                      <span className="type-subtle">
+                                        {" "}forall[{binding.quantifiers.join(", ")}]
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </section>
+
+                        <section className="type-block">
+                          <h4>Node Types (Layer 2)</h4>
+                          {layer2NodeTypes.length === 0
+                            ? <div className="type-empty">No solved node types.</div>
+                            : (
+                              <div className="type-list">
+                                {layer2NodeTypes.map((item) => (
+                                  <button
+                                    key={`layer2-${item.id}`}
+                                    className="type-item type-jump"
+                                    onClick={() => {
+                                      const node = loweredCache.get(item.id);
+                                      if (node?.span) {
+                                        jumpToSpan(node.span);
+                                      }
+                                    }}
+                                  >
+                                    <code>#{item.id}</code>
+                                    <span> : </span>
+                                    <code>{item.type}</code>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                        </section>
+
+                        <section className="type-block">
+                          <h4>Layer 1 Constraints</h4>
+                          {!(layer1?.constraints || []).length
+                            ? <div className="type-empty">No constraints recorded.</div>
+                            : (
+                              <div className="type-list">
+                                {(layer1?.constraints || []).map((constraint, idx) => (
+                                  <div key={`l1-constraint-${idx}`} className="type-item">
+                                    <code>{renderConstraint(constraint)}</code>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </section>
+
+                        <section className="type-block">
+                          <h4>Layer 2 Deferred Constraints</h4>
+                          {!(layer2?.constraints || []).length
+                            ? <div className="type-empty">No deferred constraints remaining.</div>
+                            : (
+                              <div className="type-list">
+                                {(layer2?.constraints || []).map((constraint, idx) => (
+                                  <div key={`l2-constraint-${idx}`} className="type-item">
+                                    <code>{renderConstraint(constraint)}</code>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </section>
+
+                        <section className="type-block">
+                          <h4>Type Marks (Layer 2)</h4>
+                          {!(layer2?.marks || []).length
+                            ? <div className="type-empty">No type marks.</div>
+                            : (
+                              <div className="type-list">
+                                {(layer2?.marks || []).map((mark, idx) => (
+                                  <div key={`l2-mark-${idx}`} className="type-item">
+                                    <div>
+                                      <strong>{mark.reason}</strong>: {mark.message}
+                                    </div>
+                                    <div className="type-subtle">
+                                      {mark.origin.description}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </section>
+
+                        <section className="type-block">
+                          <h4>Node Types (Layer 1 Snapshot)</h4>
+                          {layer1NodeTypes.length === 0
+                            ? <div className="type-empty">No layer 1 node types.</div>
+                            : (
+                              <div className="type-list">
+                                {layer1NodeTypes.map((item) => (
+                                  <div key={`layer1-${item.id}`} className="type-item">
+                                    <code>#{item.id}</code>
+                                    <span> : </span>
+                                    <code>{item.type}</code>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                        </section>
+                      </div>
+                    );
+                  })()}
                 </div>
               )
               : middleView === "marks"

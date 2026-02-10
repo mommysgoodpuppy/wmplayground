@@ -144,6 +144,47 @@ export interface CompilationResult {
     roots: number[];
     nodes: { [id: number]: any };
   };
+  typeDebug?: {
+    layer1?: {
+      constraints?: Array<{
+        kind: string;
+        left?: string;
+        right?: string;
+        label?: string;
+        origin?: { nodeId: number; description: string };
+      }>;
+      nodeTypes?: Array<{ id: number; type: string }>;
+      marks?: Array<{
+        reason: string;
+        message: string;
+        origin: { nodeId: number; description: string };
+        related?: Array<{ nodeId: number; description: string }>;
+        mark?: { kind: string; text?: string };
+      }>;
+    };
+    layer2?: {
+      constraints?: Array<{
+        kind: string;
+        left?: string;
+        right?: string;
+        label?: string;
+        origin?: { nodeId: number; description: string };
+      }>;
+      nodeTypes?: Array<{ id: number; type: string }>;
+      topBindings?: Array<{
+        name: string;
+        type: string;
+        quantifiers?: number[];
+      }>;
+      marks?: Array<{
+        reason: string;
+        message: string;
+        origin: { nodeId: number; description: string };
+        related?: Array<{ nodeId: number; description: string }>;
+        mark?: { kind: string; text?: string };
+      }>;
+    };
+  };
   error?: string;
 }
 

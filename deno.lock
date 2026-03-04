@@ -2393,7 +2393,10 @@
         "npm:rolldown-vite@7.2.5",
         "npm:typescript-eslint@^8.46.4",
         "npm:typescript@~5.9.3"
-      ]
+      ],
+      "overrides": {
+        "vite": "npm:rolldown-vite@7.2.5"
+      }
     }
   }
 }

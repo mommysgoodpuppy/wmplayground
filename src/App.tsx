@@ -189,6 +189,36 @@ const clamp = (value: number, min: number, max: number) =>
 const normalizeToken = (tok: any) => `${tok.kind}:${tok.text ?? ""}`;
 const isIgnorableToken = (tok: any) =>
   tok.kind === "LineComment" || tok.kind === "EOF";
+const isDepthSensitiveToken = (tok: any) =>
+  tok.kind === "LParen" ||
+  tok.kind === "RParen" ||
+  tok.kind === "LBrace" ||
+  tok.kind === "DotBrace" ||
+  tok.kind === "RBrace" ||
+  tok.kind === "LBracket" ||
+  tok.kind === "RBracket" ||
+  tok.kind === "Comma" ||
+  tok.kind === "SemiColon";
+
+const nextDepth = (tok: any, depth: { paren: number; brace: number; bracket: number }) => {
+  switch (tok.kind) {
+    case "LParen":
+      return { ...depth, paren: depth.paren + 1 };
+    case "RParen":
+      return { ...depth, paren: Math.max(0, depth.paren - 1) };
+    case "LBrace":
+    case "DotBrace":
+      return { ...depth, brace: depth.brace + 1 };
+    case "RBrace":
+      return { ...depth, brace: Math.max(0, depth.brace - 1) };
+    case "LBracket":
+      return { ...depth, bracket: depth.bracket + 1 };
+    case "RBracket":
+      return { ...depth, bracket: Math.max(0, depth.bracket - 1) };
+    default:
+      return depth;
+  }
+};
 
 const computeInsertedSpans = (
   sourceTokens: any[] | undefined,
@@ -200,15 +230,70 @@ const computeInsertedSpans = (
   const formatted = (formattedTokens ?? []).filter((t) =>
     !isIgnorableToken(t)
   );
+  const sourceProfiles = source.map((tok) => ({ tok, depth: { paren: 0, brace: 0, bracket: 0 } }));
+  const formattedProfiles = formatted.map((tok) => ({ tok, depth: { paren: 0, brace: 0, bracket: 0 } }));
+  let srcDepth = { paren: 0, brace: 0, bracket: 0 };
+  for (let i = 0; i < sourceProfiles.length; i++) {
+    sourceProfiles[i].depth = srcDepth;
+    srcDepth = nextDepth(sourceProfiles[i].tok, srcDepth);
+  }
+  let fmtDepth = { paren: 0, brace: 0, bracket: 0 };
+  for (let i = 0; i < formattedProfiles.length; i++) {
+    formattedProfiles[i].depth = fmtDepth;
+    fmtDepth = nextDepth(formattedProfiles[i].tok, fmtDepth);
+  }
+
+  const profileMatches = (a: { tok: any; depth: any }, b: { tok: any; depth: any }) => {
+    if (normalizeToken(a.tok) !== normalizeToken(b.tok)) return false;
+    if (!isDepthSensitiveToken(a.tok)) return true;
+    return a.depth.paren === b.depth.paren &&
+      a.depth.brace === b.depth.brace &&
+      a.depth.bracket === b.depth.bracket;
+  };
+
+  const n = sourceProfiles.length;
+  const m = formattedProfiles.length;
+  const cols = m + 1;
+  const dp = new Array((n + 1) * (m + 1)).fill(0);
+  const idx = (ii: number, jj: number) => ii * cols + jj;
+  for (let ii = n - 1; ii >= 0; ii--) {
+    for (let jj = m - 1; jj >= 0; jj--) {
+      if (profileMatches(sourceProfiles[ii], formattedProfiles[jj])) {
+        dp[idx(ii, jj)] = 1 + dp[idx(ii + 1, jj + 1)];
+      } else {
+        dp[idx(ii, jj)] = Math.max(dp[idx(ii + 1, jj)], dp[idx(ii, jj + 1)]);
+      }
+    }
+  }
+
   let i = 0;
+  let j = 0;
   const spans: Array<{ start: number; end: number; className: string }> = [];
-  for (let j = 0; j < formatted.length; j++) {
-    const f = formatted[j];
-    const s = source[i];
-    if (s && normalizeToken(s) === normalizeToken(f)) {
+  while (i < n && j < m) {
+    if (profileMatches(sourceProfiles[i], formattedProfiles[j])) {
       i++;
+      j++;
       continue;
     }
+    const dropSource = dp[idx(i + 1, j)];
+    const dropFormatted = dp[idx(i, j + 1)];
+    if (dropSource >= dropFormatted) {
+      i++;
+    } else {
+      const f = formattedProfiles[j].tok;
+      if (shouldHighlight(f) && f.span) {
+        spans.push({
+          start: f.span.start,
+          end: f.span.end,
+          className,
+        });
+      }
+      j++;
+    }
+  }
+
+  for (let t = j; t < m; t++) {
+    const f = formattedProfiles[t].tok;
     if (shouldHighlight(f) && f.span) {
       spans.push({
         start: f.span.start,
@@ -218,6 +303,42 @@ const computeInsertedSpans = (
     }
   }
   return spans;
+};
+
+const structuralDebugText = (
+  text: string,
+  spans: Array<{ start: number; end: number; className: string }>,
+) => {
+  const virtual = spans
+    .filter((span) => span.className === "hl-virtual")
+    .map((span) => ({
+      start: Math.max(0, Math.min(text.length, span.start)),
+      end: Math.max(0, Math.min(text.length, span.end)),
+    }))
+    .filter((span) => span.end > span.start)
+    .sort((a, b) => a.start - b.start);
+
+  if (virtual.length === 0) return text;
+
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const span of virtual) {
+    const last = merged[merged.length - 1];
+    if (!last || span.start >= last.end) {
+      merged.push({ start: span.start, end: span.end });
+    } else {
+      last.end = Math.max(last.end, span.end);
+    }
+  }
+
+  let output = "";
+  let cursor = 0;
+  for (const span of merged) {
+    output += text.slice(cursor, span.start);
+    output += `*${text.slice(span.start, span.end)}*`;
+    cursor = span.end;
+  }
+  output += text.slice(cursor);
+  return output;
 };
 
 const defaultCode = `
@@ -774,6 +895,35 @@ function App() {
     return spans;
   })();
 
+  const formatterText = formatterView === "real"
+    ? result?.formatted || ""
+    : formatterView === "structural"
+    ? result?.formattedVirtual || ""
+    : result?.formattedFix || "";
+  const formatterTokens = formatterView === "real"
+    ? result?.formattedTokens
+    : formatterView === "structural"
+    ? result?.formattedVirtualTokens
+    : result?.formattedFixTokens;
+  const formatterInsertedSpans = formatterView === "fix"
+    ? computeInsertedSpans(
+      result?.tokens,
+      formatterTokens,
+      (t) => t.kind === "SemiColon",
+      "hl-inserted-semicolon",
+    )
+    : formatterView === "structural"
+    ? (result?.formattedVirtualArtifacts ?? []).map((artifact) => ({
+      start: Math.max(0, Math.min(formatterText.length, artifact.start)),
+      end: Math.max(0, Math.min(formatterText.length, artifact.end)),
+      className: "hl-virtual",
+    })).filter((span) => span.end > span.start)
+    : [];
+  const formatterDebugText = structuralDebugText(
+    formatterText,
+    formatterInsertedSpans,
+  );
+
   const handleCompile = async (sourceCode: string) => {
     console.log(
       "[Playground] Compiling code:",
@@ -1108,6 +1258,18 @@ function App() {
                       Fix
                     </button>
                   </div>
+                  {formatterView === "structural" && (
+                    <button
+                      className="copy-ast-btn"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(formatterDebugText);
+                      }}
+                      disabled={!formatterText}
+                      title="Copy structural output with virtual tokens wrapped in *...*"
+                    >
+                      Copy debug
+                    </button>
+                  )}
                 </div>
               )}
               {middleView === "execution" && (
@@ -1409,44 +1571,15 @@ function App() {
               : middleView === "formatter"
               ? (
                 <div className="tree-content tree-content-formatter">
-                  {(() => {
-                    const formattedText = formatterView === "real"
-                      ? result?.formatted || ""
-                      : formatterView === "structural"
-                      ? result?.formattedVirtual || ""
-                      : result?.formattedFix || "";
-                    const formattedTokens = formatterView === "real"
-                      ? result?.formattedTokens
-                      : formatterView === "structural"
-                      ? result?.formattedVirtualTokens
-                      : result?.formattedFixTokens;
-                    const insertedSpans = formatterView === "fix"
-                      ? computeInsertedSpans(
-                        result?.tokens,
-                        formattedTokens,
-                        (t) => t.kind === "SemiColon",
-                        "hl-inserted-semicolon",
-                      )
-                      : formatterView === "structural"
-                      ? computeInsertedSpans(
-                        result?.tokens,
-                        formattedTokens,
-                        (_t) => true,
-                        "hl-virtual",
-                      )
-                      : [];
-                    return (
-                      <CodeEditor
-                        value={formattedText}
-                        tokens={formattedTokens}
-                        insertedSpans={insertedSpans}
-                        onChange={() => {}}
-                        readOnly
-                        placeholder="Compile code to see formatter output"
-                        syncScroll={editorScroll}
-                      />
-                    );
-                  })()}
+                  <CodeEditor
+                    value={formatterText}
+                    tokens={formatterTokens}
+                    insertedSpans={formatterInsertedSpans}
+                    onChange={() => {}}
+                    readOnly
+                    placeholder="Compile code to see formatter output"
+                    syncScroll={editorScroll}
+                  />
                 </div>
               )
               : middleView === "execution"

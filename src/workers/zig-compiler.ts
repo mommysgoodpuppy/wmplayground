@@ -30,40 +30,39 @@ function getLib() {
 async function run(zigSource: string) {
   if (currentlyRunning) return;
   currentlyRunning = true;
-
-  const [zigModule, libDirectory] = await Promise.all([getZigModule(), getLib()]);
-
-  const args = [
-    "zig.wasm",
-    "build-exe",
-    "main.zig",
-    "-fno-llvm",
-    "-fno-lld",
-    "-fno-ubsan-rt",
-    "-fno-entry",
-  ];
-  const fds: Fd[] = [
-    new OpenFile(new File([])),
-    stderrOutput(),
-    stderrOutput(),
-    new PreopenDirectory(
-      ".",
-      new Map<string, Inode>([
-        ["main.zig", new File(new TextEncoder().encode(zigSource))],
-      ])
-    ),
-    new PreopenDirectory("/lib", libDirectory.contents),
-    new PreopenDirectory("/cache", new Map()),
-  ];
-  const wasi = new WASI(args, [], fds, { debug: false });
-
-  const instance = await WebAssembly.instantiate(zigModule, {
-    wasi_snapshot_preview1: wasi.wasiImport,
-  });
-
-  postMessage({ stderr: "Compiling Zig...\n" });
-
   try {
+    const [zigModule, libDirectory] = await Promise.all([getZigModule(), getLib()]);
+
+    const args = [
+      "zig.wasm",
+      "build-exe",
+      "main.zig",
+      "-fno-llvm",
+      "-fno-lld",
+      "-fno-ubsan-rt",
+      "-fno-entry",
+    ];
+    const fds: Fd[] = [
+      new OpenFile(new File([])),
+      stderrOutput(),
+      stderrOutput(),
+      new PreopenDirectory(
+        ".",
+        new Map<string, Inode>([
+          ["main.zig", new File(new TextEncoder().encode(zigSource))],
+        ])
+      ),
+      new PreopenDirectory("/lib", libDirectory.contents),
+      new PreopenDirectory("/cache", new Map()),
+    ];
+    const wasi = new WASI(args, [], fds, { debug: false });
+
+    const instance = await WebAssembly.instantiate(zigModule, {
+      wasi_snapshot_preview1: wasi.wasiImport,
+    });
+
+    postMessage({ stderr: "Compiling Zig...\n" });
+
     // @ts-ignore
     const exitCode = wasi.start(instance);
 
@@ -77,9 +76,9 @@ async function run(zigSource: string) {
   } catch (err) {
     postMessage({ stderr: `${err}` });
     postMessage({ failed: true });
+  } finally {
+    currentlyRunning = false;
   }
-
-  currentlyRunning = false;
 }
 
 onmessage = (event) => {

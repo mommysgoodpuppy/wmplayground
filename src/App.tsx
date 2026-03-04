@@ -401,6 +401,19 @@ function App() {
     const zigWorker = new ZigCompilerWorker() as Worker;
     zigWorkerRef.current = zigWorker;
 
+    zigWorker.onerror = (event) => {
+      setExecOutput((prev) =>
+        prev + `\n❌ Zig compiler worker crashed: ${event.message}\n`
+      );
+      setExecRunning(false);
+      zigWorker.terminate();
+    };
+    zigWorker.onmessageerror = () => {
+      setExecOutput((prev) => prev + "\n❌ Zig compiler worker message error\n");
+      setExecRunning(false);
+      zigWorker.terminate();
+    };
+
     zigWorker.onmessage = (ev) => {
       if (ev.data.stderr) {
         setExecOutput((prev) => prev + ev.data.stderr);
@@ -413,6 +426,19 @@ function App() {
 
         const runnerWorker = new ZigRunnerWorker() as Worker;
         runnerWorkerRef.current = runnerWorker;
+
+        runnerWorker.onerror = (event) => {
+          setExecOutput((prev) =>
+            prev + `\n❌ Zig runner worker crashed: ${event.message}\n`
+          );
+          setExecRunning(false);
+          runnerWorker.terminate();
+        };
+        runnerWorker.onmessageerror = () => {
+          setExecOutput((prev) => prev + "\n❌ Zig runner worker message error\n");
+          setExecRunning(false);
+          runnerWorker.terminate();
+        };
 
         runnerWorker.postMessage({ run: ev.data.compiled });
 
@@ -1556,7 +1582,7 @@ function App() {
                   <div className="exec-console">
                     {execOutput || "Click ▶ Run to execute your program."}
                   </div>
-                  <div className="exec-zig-label">Generated Zig Source</div>
+                  <div className="exec-zig-label">Generated Zig Source (editable)</div>
                   <div className="exec-zig-panel">
                     <ZigSourceView
                       source={execZigSource}

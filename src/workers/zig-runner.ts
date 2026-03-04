@@ -7,22 +7,22 @@ import {
 import { stderrOutput } from "../lib/zig-utils";
 
 async function run(wasmData: Uint8Array) {
-  const args = ["main.wasm"];
-  const env: string[] = [];
-  const fds = [
-    new OpenFile(new File([])), // stdin
-    stderrOutput(), // stdout
-    stderrOutput(), // stderr
-    new PreopenDirectory(".", new Map([])),
-  ];
-  const wasi = new WASI(args, env, fds);
-
-  // @ts-ignore - wasmData is a compiled module buffer
-  const { instance } = await WebAssembly.instantiate(wasmData, {
-    wasi_snapshot_preview1: wasi.wasiImport,
-  }) as { instance: WebAssembly.Instance };
-
   try {
+    const args = ["main.wasm"];
+    const env: string[] = [];
+    const fds = [
+      new OpenFile(new File([])), // stdin
+      stderrOutput(), // stdout
+      stderrOutput(), // stderr
+      new PreopenDirectory(".", new Map([])),
+    ];
+    const wasi = new WASI(args, env, fds);
+
+    // @ts-ignore - wasmData is a compiled module buffer
+    const { instance } = await WebAssembly.instantiate(wasmData, {
+      wasi_snapshot_preview1: wasi.wasiImport,
+    }) as { instance: WebAssembly.Instance };
+
     // @ts-ignore
     const exitCode = wasi.start(instance);
     postMessage({
@@ -30,9 +30,9 @@ async function run(wasmData: Uint8Array) {
     });
   } catch (err) {
     postMessage({ stderr: `${err}` });
+  } finally {
+    postMessage({ done: true });
   }
-
-  postMessage({ done: true });
 }
 
 onmessage = (event) => {

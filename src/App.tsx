@@ -279,8 +279,27 @@ const buildFixViewFromStructural = (result: CompilationResult | null) => {
 };
 
 const defaultCode = `
+let inc = (x) => {
+  x + 1
+};
+
+let mul2 = (x) => {
+  x * 2
+};
+
 let main = => {
-  print(1+1)
+  let base = 10;
+  let a = inc(base);
+  let local = (n) => {
+    n * 3
+  };
+  let b = local(a) + mul2(a);
+  let c = if (true) {
+    b + 5
+  } else {
+    b - 5
+  };
+  print(c)
 };
 `.trim();
 

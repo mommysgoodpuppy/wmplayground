@@ -134,7 +134,10 @@ export interface CompilationResult {
     text: string;
     start: number;
     end: number;
+    sourceAnchor: number;
     reason: string;
+    repairClass?: "AutoFix" | "OptionalCanonical" | "RecoveryOnly";
+    repairPairId?: number | null;
   }>;
   surfaceNodeStore?: {
     roots: number[];

@@ -124,7 +124,10 @@ interface CompilationResult {
     text: string;
     start: number;
     end: number;
+    sourceAnchor: number;
     reason: string;
+    repairClass?: "AutoFix" | "OptionalCanonical" | "RecoveryOnly";
+    repairPairId?: number | null;
   }>;
   surfaceNodeStore?: {
     roots: number[];
@@ -183,134 +186,29 @@ interface ErrorLocation {
   col: number;
 }
 
+type FormatterArtifact = NonNullable<
+  CompilationResult["formattedVirtualArtifacts"]
+>[number];
+
+type FormatterSpan = {
+  start: number;
+  end: number;
+  className: string;
+  artifact?: FormatterArtifact;
+};
+
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
-
-const normalizeToken = (tok: any) => `${tok.kind}:${tok.text ?? ""}`;
-const isIgnorableToken = (tok: any) =>
-  tok.kind === "LineComment" || tok.kind === "EOF";
-const isDepthSensitiveToken = (tok: any) =>
-  tok.kind === "LParen" ||
-  tok.kind === "RParen" ||
-  tok.kind === "LBrace" ||
-  tok.kind === "DotBrace" ||
-  tok.kind === "RBrace" ||
-  tok.kind === "LBracket" ||
-  tok.kind === "RBracket" ||
-  tok.kind === "Comma" ||
-  tok.kind === "SemiColon";
-
-const nextDepth = (tok: any, depth: { paren: number; brace: number; bracket: number }) => {
-  switch (tok.kind) {
-    case "LParen":
-      return { ...depth, paren: depth.paren + 1 };
-    case "RParen":
-      return { ...depth, paren: Math.max(0, depth.paren - 1) };
-    case "LBrace":
-    case "DotBrace":
-      return { ...depth, brace: depth.brace + 1 };
-    case "RBrace":
-      return { ...depth, brace: Math.max(0, depth.brace - 1) };
-    case "LBracket":
-      return { ...depth, bracket: depth.bracket + 1 };
-    case "RBracket":
-      return { ...depth, bracket: Math.max(0, depth.bracket - 1) };
-    default:
-      return depth;
-  }
-};
-
-const computeInsertedSpans = (
-  sourceTokens: any[] | undefined,
-  formattedTokens: any[] | undefined,
-  shouldHighlight: (tok: any) => boolean,
-  className: string,
-) => {
-  const source = (sourceTokens ?? []).filter((t) => !isIgnorableToken(t));
-  const formatted = (formattedTokens ?? []).filter((t) =>
-    !isIgnorableToken(t)
-  );
-  const sourceProfiles = source.map((tok) => ({ tok, depth: { paren: 0, brace: 0, bracket: 0 } }));
-  const formattedProfiles = formatted.map((tok) => ({ tok, depth: { paren: 0, brace: 0, bracket: 0 } }));
-  let srcDepth = { paren: 0, brace: 0, bracket: 0 };
-  for (let i = 0; i < sourceProfiles.length; i++) {
-    sourceProfiles[i].depth = srcDepth;
-    srcDepth = nextDepth(sourceProfiles[i].tok, srcDepth);
-  }
-  let fmtDepth = { paren: 0, brace: 0, bracket: 0 };
-  for (let i = 0; i < formattedProfiles.length; i++) {
-    formattedProfiles[i].depth = fmtDepth;
-    fmtDepth = nextDepth(formattedProfiles[i].tok, fmtDepth);
-  }
-
-  const profileMatches = (a: { tok: any; depth: any }, b: { tok: any; depth: any }) => {
-    if (normalizeToken(a.tok) !== normalizeToken(b.tok)) return false;
-    if (!isDepthSensitiveToken(a.tok)) return true;
-    return a.depth.paren === b.depth.paren &&
-      a.depth.brace === b.depth.brace &&
-      a.depth.bracket === b.depth.bracket;
-  };
-
-  const n = sourceProfiles.length;
-  const m = formattedProfiles.length;
-  const cols = m + 1;
-  const dp = new Array((n + 1) * (m + 1)).fill(0);
-  const idx = (ii: number, jj: number) => ii * cols + jj;
-  for (let ii = n - 1; ii >= 0; ii--) {
-    for (let jj = m - 1; jj >= 0; jj--) {
-      if (profileMatches(sourceProfiles[ii], formattedProfiles[jj])) {
-        dp[idx(ii, jj)] = 1 + dp[idx(ii + 1, jj + 1)];
-      } else {
-        dp[idx(ii, jj)] = Math.max(dp[idx(ii + 1, jj)], dp[idx(ii, jj + 1)]);
-      }
-    }
-  }
-
-  let i = 0;
-  let j = 0;
-  const spans: Array<{ start: number; end: number; className: string }> = [];
-  while (i < n && j < m) {
-    if (profileMatches(sourceProfiles[i], formattedProfiles[j])) {
-      i++;
-      j++;
-      continue;
-    }
-    const dropSource = dp[idx(i + 1, j)];
-    const dropFormatted = dp[idx(i, j + 1)];
-    if (dropSource >= dropFormatted) {
-      i++;
-    } else {
-      const f = formattedProfiles[j].tok;
-      if (shouldHighlight(f) && f.span) {
-        spans.push({
-          start: f.span.start,
-          end: f.span.end,
-          className,
-        });
-      }
-      j++;
-    }
-  }
-
-  for (let t = j; t < m; t++) {
-    const f = formattedProfiles[t].tok;
-    if (shouldHighlight(f) && f.span) {
-      spans.push({
-        start: f.span.start,
-        end: f.span.end,
-        className,
-      });
-    }
-  }
-  return spans;
-};
 
 const structuralDebugText = (
   text: string,
   spans: Array<{ start: number; end: number; className: string }>,
 ) => {
+  const isInsertedSpan = (span: { className: string }) =>
+    span.className.includes("hl-virtual") ||
+    span.className.includes("hl-inserted-token");
   const virtual = spans
-    .filter((span) => span.className === "hl-virtual")
+    .filter((span) => isInsertedSpan(span))
     .map((span) => ({
       start: Math.max(0, Math.min(text.length, span.start)),
       end: Math.max(0, Math.min(text.length, span.end)),
@@ -339,6 +237,45 @@ const structuralDebugText = (
   }
   output += text.slice(cursor);
   return output;
+};
+
+const buildFixViewFromStructural = (result: CompilationResult | null) => {
+  const base = result?.formattedVirtual ?? "";
+  const artifacts = [...(result?.formattedVirtualArtifacts ?? [])]
+    .sort((a, b) => a.start - b.start);
+  if (!base) {
+    return { text: "", spans: [] as FormatterSpan[] };
+  }
+  if (!artifacts.length) {
+    return { text: base, spans: [] as FormatterSpan[] };
+  }
+
+  let out = "";
+  let cursor = 0;
+  const spans: FormatterSpan[] = [];
+  for (const artifact of artifacts) {
+    const start = Math.max(0, Math.min(base.length, artifact.start));
+    const end = Math.max(0, Math.min(base.length, artifact.end));
+    if (start > cursor) {
+      out += base.slice(cursor, start);
+    }
+    if (artifact.repairClass === "AutoFix" && end > start) {
+      const mappedStart = out.length;
+      const text = base.slice(start, end);
+      out += text;
+      spans.push({
+        start: mappedStart,
+        end: out.length,
+        className: "hl-inserted-token",
+        artifact,
+      });
+    }
+    cursor = Math.max(cursor, end);
+  }
+  if (cursor < base.length) {
+    out += base.slice(cursor);
+  }
+  return { text: out, spans };
 };
 
 const defaultCode = `
@@ -445,6 +382,9 @@ function App() {
   const [cliStatus, setCliStatus] = useState<
     { ok: boolean; latencyMs: number; error?: string } | null
   >(null);
+  const [selectedFormatterArtifact, setSelectedFormatterArtifact] = useState<
+    { artifact: FormatterArtifact; span: FormatterSpan } | null
+  >(null);
 
   // Execution state
   const [execOutput, setExecOutput] = useState<string>("");
@@ -537,6 +477,12 @@ function App() {
   useEffect(() => {
     localStorage.setItem("formatterView", formatterView);
   }, [formatterView]);
+
+  useEffect(() => {
+    if (middleView !== "formatter") {
+      setSelectedFormatterArtifact(null);
+    }
+  }, [middleView, formatterView, result]);
 
   useEffect(() => {
     localStorage.setItem("panelRatios", JSON.stringify(panelRatios));
@@ -895,34 +841,64 @@ function App() {
     return spans;
   })();
 
+  const structuralSpans: FormatterSpan[] = (result?.formattedVirtualArtifacts ?? [])
+    .map((artifact) => ({
+      start: Math.max(0, Math.min((result?.formattedVirtual || "").length, artifact.start)),
+      end: Math.max(0, Math.min((result?.formattedVirtual || "").length, artifact.end)),
+      className: "hl-virtual",
+      artifact,
+    }))
+    .filter((span) => span.end > span.start);
+  const fixView = buildFixViewFromStructural(result);
   const formatterText = formatterView === "real"
     ? result?.formatted || ""
     : formatterView === "structural"
     ? result?.formattedVirtual || ""
-    : result?.formattedFix || "";
+    : fixView.text;
   const formatterTokens = formatterView === "real"
     ? result?.formattedTokens
     : formatterView === "structural"
     ? result?.formattedVirtualTokens
-    : result?.formattedFixTokens;
-  const formatterInsertedSpans = formatterView === "fix"
-    ? computeInsertedSpans(
-      result?.tokens,
-      formatterTokens,
-      (t) => t.kind === "SemiColon",
-      "hl-inserted-semicolon",
-    )
+    : undefined;
+  const formatterInsertedSpansBase: FormatterSpan[] = formatterView === "fix"
+    ? fixView.spans
     : formatterView === "structural"
-    ? (result?.formattedVirtualArtifacts ?? []).map((artifact) => ({
-      start: Math.max(0, Math.min(formatterText.length, artifact.start)),
-      end: Math.max(0, Math.min(formatterText.length, artifact.end)),
-      className: "hl-virtual",
-    })).filter((span) => span.end > span.start)
+    ? structuralSpans
     : [];
+  const selectedPairId = selectedFormatterArtifact?.artifact.repairPairId ?? null;
+  const formatterInsertedSpans: FormatterSpan[] = formatterInsertedSpansBase.map((span) => {
+    if (!span.artifact) return span;
+    if (selectedFormatterArtifact && span.artifact === selectedFormatterArtifact.artifact) {
+      return { ...span, className: `${span.className} hl-inserted-selected` };
+    }
+    if (selectedPairId != null && span.artifact.repairPairId === selectedPairId) {
+      return { ...span, className: `${span.className} hl-inserted-mate` };
+    }
+    return span;
+  });
   const formatterDebugText = structuralDebugText(
     formatterText,
     formatterInsertedSpans,
   );
+  const handleFormatterOffsetClick = (offset: number) => {
+    if (middleView !== "formatter") return;
+    const hit = formatterInsertedSpans.find((span) =>
+      offset >= span.start && offset < span.end
+    );
+    if (hit?.artifact) {
+      setSelectedFormatterArtifact({ artifact: hit.artifact, span: hit });
+    } else {
+      setSelectedFormatterArtifact(null);
+    }
+  };
+  const selectedFormatterMate = selectedFormatterArtifact &&
+      selectedFormatterArtifact.artifact.repairPairId != null
+    ? formatterInsertedSpansBase.find((span) =>
+      span.artifact &&
+      span.artifact !== selectedFormatterArtifact.artifact &&
+      span.artifact.repairPairId === selectedFormatterArtifact.artifact.repairPairId
+    )?.artifact
+    : null;
 
   const handleCompile = async (sourceCode: string) => {
     console.log(
@@ -1258,14 +1234,14 @@ function App() {
                       Fix
                     </button>
                   </div>
-                  {formatterView === "structural" && (
+                  {formatterView !== "real" && (
                     <button
                       className="copy-ast-btn"
                       onClick={async () => {
                         await navigator.clipboard.writeText(formatterDebugText);
                       }}
                       disabled={!formatterText}
-                      title="Copy structural output with virtual tokens wrapped in *...*"
+                      title="Copy formatter output with inserted tokens wrapped in *...*"
                     >
                       Copy debug
                     </button>
@@ -1576,6 +1552,7 @@ function App() {
                     tokens={formatterTokens}
                     insertedSpans={formatterInsertedSpans}
                     onChange={() => {}}
+                    onOffsetClick={handleFormatterOffsetClick}
                     readOnly
                     placeholder="Compile code to see formatter output"
                     syncScroll={editorScroll}
@@ -1674,6 +1651,68 @@ function App() {
             </div>
             {rightPane === "docs"
               ? <DocsViewer />
+              : middleView === "formatter"
+              ? (
+                <div className="node-inspector">
+                  {!selectedFormatterArtifact
+                    ? (
+                      <div className="inspector-empty">
+                        Click a highlighted formatter token to inspect recovery metadata
+                      </div>
+                    )
+                    : (
+                      <>
+                        <div className="inspector-section">
+                          <div className="inspector-label">Token</div>
+                          <div className="inspector-value">
+                            <code>{selectedFormatterArtifact.artifact.text}</code>
+                          </div>
+                        </div>
+                        <div className="inspector-section">
+                          <div className="inspector-label">Reason</div>
+                          <div className="inspector-value">
+                            {selectedFormatterArtifact.artifact.reason}
+                          </div>
+                        </div>
+                        <div className="inspector-section">
+                          <div className="inspector-label">Repair Class</div>
+                          <div className="inspector-value">
+                            {selectedFormatterArtifact.artifact.repairClass ?? "RecoveryOnly"}
+                          </div>
+                        </div>
+                        <div className="inspector-section">
+                          <div className="inspector-label">Pair/Mate</div>
+                          <div className="inspector-value">
+                            {selectedFormatterArtifact.artifact.repairPairId ?? "none"}
+                            {selectedFormatterMate
+                              ? ` (mate token: ${selectedFormatterMate.text})`
+                              : ""}
+                          </div>
+                        </div>
+                        <div className="inspector-section">
+                          <div className="inspector-label">Virtual Span</div>
+                          <div className="inspector-value">
+                            start: {selectedFormatterArtifact.artifact.start}, end:{" "}
+                            {selectedFormatterArtifact.artifact.end}
+                          </div>
+                        </div>
+                        <div className="inspector-section">
+                          <div className="inspector-label">Source Anchor</div>
+                          <div className="inspector-value">
+                            {selectedFormatterArtifact.artifact.sourceAnchor}
+                          </div>
+                        </div>
+                        <div className="inspector-section">
+                          <div className="inspector-label">Display Span</div>
+                          <div className="inspector-value">
+                            start: {selectedFormatterArtifact.span.start}, end:{" "}
+                            {selectedFormatterArtifact.span.end}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                </div>
+              )
               : <NodeInspector node={selectedNode} sourceCode={code} />}
           </div>
         </div>

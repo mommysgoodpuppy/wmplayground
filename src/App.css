@@ -976,6 +976,21 @@
   color: rgb(255, 0, 0);
 }
 
+.hl-inserted-token {
+  color: rgb(255, 0, 0);
+  font-weight: 600;
+}
+
+.hl-inserted-selected {
+  background-color: rgba(255, 0, 0, 0.22);
+  border-radius: 3px;
+}
+
+.hl-inserted-mate {
+  background-color: rgba(255, 140, 0, 0.2);
+  border-radius: 3px;
+}
+
 .hl-virtual {
   opacity: 0.55;
 }

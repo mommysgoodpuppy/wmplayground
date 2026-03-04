@@ -30,6 +30,7 @@ interface CodeEditorProps {
   cursorOffset?: number;
   onScrollChange?: (pos: { top: number; left: number }) => void;
   syncScroll?: { top: number; left: number } | null;
+  onOffsetClick?: (offset: number) => void;
 }
 
 export interface CodeEditorRef {
@@ -51,6 +52,7 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       cursorOffset,
       onScrollChange,
       syncScroll,
+      onOffsetClick,
     },
     ref,
   ) => {
@@ -118,6 +120,11 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
       onCursorChange({ line, col, offset });
     };
 
+    const emitOffsetClick = () => {
+      if (!textareaRef.current || !onOffsetClick) return;
+      onOffsetClick(textareaRef.current.selectionStart);
+    };
+
     const highlighted = highlightCode(
       value,
       errorLocation,
@@ -165,7 +172,11 @@ export const CodeEditor = forwardRef<CodeEditorRef, CodeEditorProps>(
             onChange={(e) => onChange(e.target.value)}
             onScroll={handleScroll}
             onSelect={handleCursorChange}
-            onClick={handleCursorChange}
+            onClick={() => {
+              handleCursorChange();
+              emitOffsetClick();
+            }}
+            onMouseUp={emitOffsetClick}
             onKeyUp={handleCursorChange}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}

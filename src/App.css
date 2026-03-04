@@ -633,6 +633,51 @@
   scrollbar-width: thin;
 }
 
+.middle-view-tabs {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border-default);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-card-hover) 75%, transparent),
+    color-mix(in srgb, var(--bg-card) 95%, transparent)
+  );
+}
+
+.middle-view-tab {
+  position: relative;
+  padding: 0.26rem 0.72rem;
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: all 150ms ease-in-out;
+}
+
+.middle-view-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+  background: var(--bg-card-hover);
+}
+
+.middle-view-tab.active {
+  color: white;
+  border-color: color-mix(in srgb, var(--accent-orange) 80%, black 8%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-orange) 84%, #ffb37b 16%),
+    var(--accent-orange)
+  );
+  box-shadow: var(--btn-shadow);
+}
+
 .panel-view-picker {
   display: inline-flex;
   align-items: center;

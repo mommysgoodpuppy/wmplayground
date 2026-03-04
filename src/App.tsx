@@ -279,14 +279,9 @@ const buildFixViewFromStructural = (result: CompilationResult | null) => {
 };
 
 const defaultCode = `
-type List<T> = Empty | Link<T, List<T>>;
-
-let rec length = match(list) => {
-  Empty => { 0 },
-  Link(_, rest) => { length(rest) }
+let main = => {
+  print(1+1)
 };
-
-let rec isEven = (n) => { isOdd(n) } and isOdd = (n) => { isEven(n) };
 `.trim();
 
 const middleViewOptions = [
@@ -392,6 +387,9 @@ function App() {
   const [execRunning, setExecRunning] = useState(false);
   const zigWorkerRef = useRef<Worker | null>(null);
   const runnerWorkerRef = useRef<Worker | null>(null);
+  const currentMiddleViewLabel = middleViewOptions.find((option) =>
+    option.value === middleView
+  )?.label ?? "View";
 
   const runZigSource = useCallback((zigSource: string) => {
     setExecOutput((prev) => prev + "Compiling Zig → WASM...\n");
@@ -1115,29 +1113,21 @@ function App() {
           />
 
           <div className="panel tree-panel">
-            <div className="panel-header">
-              <div className="panel-view-picker">
-                <label className="panel-view-label" htmlFor="middle-view-select">
-                  View
-                </label>
-                <select
-                  id="middle-view-select"
-                  className="panel-view-select"
-                  value={middleView}
-                  onChange={(event) =>
-                    setMiddleView(
-                      event.target.value as
-                        "ast" | "types" | "tokens" | "marks" | "formatter" |
-                          "execution",
-                    )}
+            <div className="middle-view-tabs" role="tablist" aria-label="Middle view">
+              {middleViewOptions.map((option) => (
+                <button
+                  key={option.value}
+                  role="tab"
+                  aria-selected={middleView === option.value}
+                  className={`middle-view-tab ${middleView === option.value ? "active" : ""}`}
+                  onClick={() => setMiddleView(option.value)}
                 >
-                  {middleViewOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="panel-header">
+              <h3>{currentMiddleViewLabel}</h3>
               {middleView === "ast" && (
                 <div className="ast-controls">
                   <div
@@ -1206,6 +1196,18 @@ function App() {
               )}
               {middleView === "formatter" && (
                 <div className="ast-controls">
+                  <button
+                    className="copy-ast-btn"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(formatterDebugText);
+                    }}
+                    disabled={!formatterText}
+                    title={formatterView === "real"
+                      ? "Copy formatter output"
+                      : "Copy formatter output with inserted tokens wrapped in *...*"}
+                  >
+                    {formatterView === "real" ? "Copy output" : "Copy debug"}
+                  </button>
                   <div
                     className={`ast-view-toggle three pos-${formatterView}`}
                   >
@@ -1234,18 +1236,6 @@ function App() {
                       Fix
                     </button>
                   </div>
-                  {formatterView !== "real" && (
-                    <button
-                      className="copy-ast-btn"
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(formatterDebugText);
-                      }}
-                      disabled={!formatterText}
-                      title="Copy formatter output with inserted tokens wrapped in *...*"
-                    >
-                      Copy debug
-                    </button>
-                  )}
                 </div>
               )}
               {middleView === "execution" && (
